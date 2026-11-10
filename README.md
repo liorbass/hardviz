@@ -10,10 +10,8 @@
 [![Download for Linux](https://img.shields.io/badge/Download-Linux%20x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-linux-x64.tar.gz)
 [![Download for macOS](https://img.shields.io/badge/Download-macOS%20Apple%20Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-macos-arm64.tar.gz)
 
-HardViz keeps an eye on your hardware while you work. Live gauges for CPU,
-RAM, GPU and VRAM; charts for usage, temperature, network and disk; tiles for
-power, clocks, fans and drive health; and a sortable list of whatever is
-eating the machine right now. Windows, Linux and macOS, built with Rust and
+HardViz keep an eye on your hardware,
+Modular, FAST, LITE. For Windows, Linux and macOS, built with Rust and
 [egui](https://github.com/emilk/egui).
 
 ![HardViz dashboard (Midnight theme, demo data): usage gauges, memory bars, sensor tiles, usage, temperature, network and disk charts, top processes](docs/images/dashboard.png)
