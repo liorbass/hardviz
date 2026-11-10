@@ -1,13 +1,14 @@
 name: CI
 
+# Runs only when a version is tagged (`git tag v0.2.0 && git push origin v0.2.0`)
+# or when started by hand (Actions tab -> CI -> Run workflow). Ordinary
+# commits, docs and comment edits trigger nothing.
 on:
   push:
-    branches: [main, master]
     tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
-# A newer push to the same branch or PR cancels the run in progress.
+# A newer run for the same ref cancels the one in progress.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -58,11 +59,10 @@ jobs:
         run: cargo test --locked
 
   package:
-    # Release builds on every push to the main branch and on tags, uploaded as
-    # workflow artifacts (Actions run page -> Artifacts).
+    # Release builds, uploaded as workflow artifacts (Actions run page ->
+    # Artifacts).
     name: Package (${{ matrix.name }})
     needs: [fmt, check]
-    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:

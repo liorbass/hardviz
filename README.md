@@ -121,14 +121,21 @@ cargo test --lib readme_screenshots -- --ignored   # rewrites docs/images/*.png
 
 ### CI
 
-`.github/workflows/ci.yml` runs on every push and pull request:
+`.github/workflows/ci.yml` does not run on ordinary commits. It runs when you
+push a version tag, or when started by hand from the **Actions** tab
+(**CI** → **Run workflow**):
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
 
 | Job | What it does |
 |---|---|
 | Format | `cargo fmt --check` (style in `rustfmt.toml`) |
 | Clippy + test | `cargo clippy -- -D warnings` and `cargo test`, on Windows and Ubuntu (each compiles platform-only sources the other cannot) |
-| Package | pushes to the main branch: release builds, downloadable from the run's **Artifacts** (Windows zip includes LibreHardwareMonitor) |
-| GitHub release | pushing a `v*` tag (`git tag v0.2.0 && git push --tags`) publishes both packages as a release |
+| Package | release builds of `hardviz` and `hardviz-tui`, downloadable from the run's **Artifacts** (Windows zip includes LibreHardwareMonitor) |
+| GitHub release | on a `v*` tag only: publishes both packages as a release |
 
 Run the same checks locally before pushing:
 
