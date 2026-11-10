@@ -11,10 +11,10 @@
 [![Download for macOS](https://img.shields.io/badge/Download-macOS%20Apple%20Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-macos-arm64.tar.gz)
 
 HardViz keep an eye on your hardware,
-Modular, FAST, LITE. For Windows, Linux and macOS, built with Rust.
+Modular, FAST, LITE. For Windows, Linux and macOS, built with Rust and [egui](https://github.com/emilk/egui)..
 
 This was built for my own usage, I didn't find any monitoring tool that I can setup the exact way I wanted, so we got this.
-[egui](https://github.com/emilk/egui).
+
 
 ![HardViz dashboard (Midnight theme, demo data): usage gauges, memory bars, sensor tiles, usage, temperature, network and disk charts, top processes](docs/images/dashboard.png)
 
