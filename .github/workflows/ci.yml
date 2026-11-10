@@ -56,8 +56,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      # One thread: libtest then prints each test's name before running it,
+      # so a test that crashes the process (FFI into private macOS APIs) is
+      # named in the log. The suite takes about a second either way.
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked -- --test-threads=1
 
   package:
     # Release builds, uploaded as workflow artifacts (Actions run page ->

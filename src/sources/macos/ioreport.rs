@@ -322,10 +322,33 @@ impl Drop for Owned {
 // holds these objects is used by one thread at a time (the poller's).
 unsafe impl Send for Owned {}
 
+/// A Core Foundation object IOReport hands out without saying who owns it:
+/// never released. (macmon does the same with the subscribed channels;
+/// releasing them traps once IOReport frees them too.) One per source, so the
+/// worst case is one small leak.
+struct Unreleased(CFTypeRef);
+
+// SAFETY: as for `Owned`.
+unsafe impl Send for Unreleased {}
+
 /// The subscription to the channels this source reads.
 struct Subscription {
     subscription: Owned,
-    channels: Owned,
+    /// The channel request, kept alive as long as the subscription.
+    _requested: Owned,
+    channels: Unreleased,
+}
+
+/// Whether an IOReport channel dictionary lists any channel. Merging or
+/// subscribing to one that does not can trap inside IOReport (macOS VMs
+/// have few channels).
+///
+/// # Safety
+/// `dict` is a live `CFDictionary`.
+unsafe fn has_channels(dict: CFTypeRef) -> bool {
+    let key = CFString::from_static_string("IOReportChannels");
+    let array: CFArrayRef = CFDictionaryGetValue(dict.cast(), key.as_concrete_TypeRef().cast()).cast();
+    !array.is_null() && CFArrayGetCount(array) > 0
 }
 
 impl Subscription {
@@ -344,7 +367,7 @@ impl Subscription {
                 let subgroup_ref = subgroup.as_ref().map_or(std::ptr::null(), TCFType::as_concrete_TypeRef);
                 Owned::new(IOReportCopyChannelsInGroup(group.as_concrete_TypeRef(), subgroup_ref, 0, 0, 0).cast())
             };
-            let mut groups = GROUPS.iter().filter_map(|(g, s)| copy(g, *s));
+            let mut groups = GROUPS.iter().filter_map(|(g, s)| copy(g, *s)).filter(|d| has_channels(d.0));
             let requested = groups.next().ok_or("IOReport has none of the Energy Model, CPU or GPU Stats channels")?;
             for more in groups {
                 IOReportMergeChannels(requested.0.cast_mut().cast(), more.0.cast_mut().cast(), std::ptr::null());
@@ -357,16 +380,21 @@ impl Subscription {
                 0,
                 std::ptr::null(),
             );
-            let channels = Owned::new(subscribed.cast_const().cast());
-            match (Owned::new(subscription), channels) {
-                (Some(subscription), Some(channels)) => Ok(Self { subscription, channels }),
+            match Owned::new(subscription) {
+                Some(subscription) if !subscribed.is_null() && has_channels(subscribed.cast_const().cast()) => {
+                    Ok(Self {
+                        subscription,
+                        _requested: requested,
+                        channels: Unreleased(subscribed.cast_const().cast()),
+                    })
+                }
                 _ => Err("cannot subscribe to IOReport channels".into()),
             }
         }
     }
 
     fn sample(&self) -> Option<Owned> {
-        // SAFETY: both arguments are live objects owned by `self`.
+        // SAFETY: both arguments are live objects held by `self`.
         Owned::new(
             unsafe { IOReportCreateSamples(self.subscription.0, self.channels.0.cast_mut().cast(), std::ptr::null()) }
                 .cast(),
@@ -506,7 +534,8 @@ mod tests {
     #[test]
     fn samples_on_this_mac() {
         let Ok(report) = Subscription::new() else { return }; // Intel Mac or a VM without IOReport channels
-        let (a, b) = (report.sample().unwrap(), report.sample().unwrap());
+        let (Some(a), Some(b)) = (report.sample(), report.sample()) else { return };
         assert!(!delta_channels(&a, &b).is_empty());
+        drop(report); // tearing down must not trap either
     }
 }
