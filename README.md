@@ -1,8 +1,8 @@
 # HardViz
 
-[![Latest release](https://img.shields.io/github/v/release/liorbass/hardviz?sort=semver&label=release)](https://github.com/liorbass/hardviz/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/liorbass/hardviz?sort=semver&label=release&display_name=tag)](https://github.com/liorbass/hardviz/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/liorbass/hardviz/ci.yml?label=CI)](https://github.com/liorbass/hardviz/actions/workflows/ci.yml)
-[![Downloads](https://img.shields.io/github/downloads/liorbass/hardviz/total)](https://github.com/liorbass/hardviz/releases)
+[![Downloads](https://img.shields.io/github/downloads/liorbass/hardviz/total?label=downloads)](https://github.com/liorbass/hardviz/releases)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
 ![Rust](https://img.shields.io/badge/rust-stable-orange?logo=rust)
 
