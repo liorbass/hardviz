@@ -1521,6 +1521,7 @@ dependencies = [
  "eframe",
  "egui",
  "nvml-wrapper",
+ "png",
  "serde",
  "serde_json",
  "sysinfo",

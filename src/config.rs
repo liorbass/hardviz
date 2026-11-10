@@ -202,13 +202,22 @@ impl AppConfig {
         }
     }
 
+    /// The config file. Test builds have none, so no test can read or
+    /// overwrite the user's real config.
     fn path() -> Option<PathBuf> {
+        if cfg!(test) {
+            return None;
+        }
         app_dir().map(|d| d.join("config.json"))
     }
 
-    /// Where the config lives, for display.
+    /// Where the config lives, for display. Test builds show a typical
+    /// Windows location (the README screenshots are rendered from tests).
     #[must_use]
     pub fn path_label() -> String {
+        if cfg!(test) {
+            return r"%APPDATA%\hardviz\HardViz\config\config.json".into();
+        }
         Self::path().map_or_else(|| "(unavailable)".into(), |p| p.display().to_string())
     }
 

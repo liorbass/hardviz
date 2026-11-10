@@ -11,7 +11,7 @@ metric readings, **widgets** consume them by id. Neither side knows about the
 other, so adding a sensor automatically feeds every widget that asks for it,
 and adding a widget works with whatever source happens to supply its metrics.
 
-![HardViz dashboard: gauges, temperature and usage charts, memory bars, network, top processes and sensors](docs/images/dashboard.png)
+![HardViz dashboard (Midnight theme, demo data): usage gauges, memory bars, sensor tiles, usage, temperature, network and disk charts, top processes](docs/images/dashboard.png)
 
 ```mermaid
 flowchart LR
@@ -109,8 +109,17 @@ cargo test
 
 Pure parsing and selection logic is unit tested: LHM `data.json` parsing and
 the startup-task helpers (Windows), hwmon sensor picking and `/proc/diskstats`
-(Linux), network adapter filtering and process ranking (both). GUI code is not
-covered; verify widget changes by running the app.
+(Linux), network adapter filtering and process ranking (both). The app itself
+is exercised headlessly (frames run without a window), and
+`tests/pipeline.rs` runs sources → poller → store → widgets end to end. Tests
+never read or write your real config file.
+
+The README screenshots are rendered the same way, from scripted demo data
+rather than your machine, and rasterised on the CPU, so no window opens:
+
+```sh
+cargo test --lib readme_screenshots -- --ignored   # rewrites docs/images/*.png
+```
 
 ### CI
 
@@ -133,7 +142,7 @@ cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
 
 ## Usage
 
-| Compact overlay — borderless, always on top, drag to move |
+| Compact overlay (Solarized theme) — borderless, always on top, drag to move |
 |---|
 | ![Compact overlay strip](docs/images/compact.png) |
 
@@ -147,7 +156,7 @@ cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
 | `Add widget` | open the **Add widget** panel — one button per registered widget type |
 | `Settings` | open **Settings** |
 
-![Edit layout: drag hint in the top bar and a resize grip on every card](docs/images/edit-layout.png)
+![Edit layout (Cyberpunk theme): drag hint in the top bar; on every card a visual menu, a remove button and a resize grip](docs/images/edit-layout.png)
 
 In **Edit layout**, drag a card onto another to **swap** them (both glow
 briefly), and drag the grip in a card's bottom-right corner to **resize** it:
@@ -168,9 +177,19 @@ also reorderable from Settings → Widgets with `↑` / `↓`.
 `W` / `C` / `F` are ignored while a text field has focus and when Ctrl, Alt or
 Cmd is held.
 
+### Themes
+
+Five presets, switched live from **Settings → Theme**:
+
+| Midnight | Light | OLED Black |
+|---|---|---|
+| ![Midnight theme](docs/images/theme-midnight.png) | ![Light theme](docs/images/theme-light.png) | ![OLED Black theme](docs/images/theme-oled.png) |
+| **Cyberpunk** | **Solarized** | |
+| ![Cyberpunk theme](docs/images/theme-cyber.png) | ![Solarized theme](docs/images/theme-solar.png) | |
+
 ### Settings panel
 
-![Settings: theme, text size and sampling; data sources with the startup task; live metrics with their providers; widget chips](docs/images/settings.png)
+![Settings (Light theme): theme, text size and sampling; data sources; live metrics with their providers; widget chips](docs/images/settings.png)
 
 Laid out in columns when the window is wide enough (General | Data sources |
 Metrics), with the widget list as wrapping chips underneath.

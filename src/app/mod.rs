@@ -95,10 +95,15 @@ impl HardVizApp {
     where
         F: FnOnce() -> Vec<Box<dyn MetricSource>> + Send + 'static,
     {
-        style::install_font_fallbacks(ctx);
         // Sources are built and first polled on the poller thread, with the
         // user's disabled set applied before anything runs.
         let poller = Poller::spawn(sources, &config.disabled_sources, config.refresh_rate_ms);
+        Self::with_poller(ctx, config, poller)
+    }
+
+    /// An app reading from `poller`, which the caller has already started.
+    fn with_poller(ctx: &egui::Context, config: AppConfig, poller: Poller) -> Self {
+        style::install_font_fallbacks(ctx);
         let mut window = WindowState::new();
         window.restore(&config);
 
@@ -250,6 +255,8 @@ impl eframe::App for HardVizApp {
     }
 }
 
+#[cfg(test)]
+mod screenshots;
 #[cfg(test)]
 mod test_support;
 

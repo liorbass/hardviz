@@ -50,6 +50,12 @@ pub(super) fn apply_theme_to_context(ctx: &egui::Context, theme: &Theme) {
     v.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, theme.accent);
     v.widgets.active.bg_fill = with_alpha(theme.accent, 35);
     v.widgets.active.fg_stroke = egui::Stroke::new(1.5_f32, theme.accent);
+    // Buttons and value boxes paint `weak_bg_fill`; left at the dark
+    // default, they show as black boxes on the light theme.
+    v.widgets.noninteractive.weak_bg_fill = theme.bg_secondary;
+    v.widgets.inactive.weak_bg_fill = theme.bg_widget;
+    v.widgets.hovered.weak_bg_fill = with_alpha(theme.accent, 20);
+    v.widgets.active.weak_bg_fill = with_alpha(theme.accent, 35);
     v.selection.bg_fill = with_alpha(theme.accent, 40);
     v.window_fill = theme.bg_primary;
     v.panel_fill = theme.bg_primary;
@@ -108,6 +114,7 @@ mod tests {
         let theme = ThemeName::PureLight.theme();
         apply_theme_to_context(&ctx, &theme);
         assert_eq!(ctx.style().visuals.panel_fill, theme.bg_primary);
+        assert_eq!(ctx.style().visuals.widgets.inactive.weak_bg_fill, theme.bg_widget);
         apply_font_scale(&ctx, 2.0);
         let base = egui::Style::default().text_styles[&egui::TextStyle::Button].size;
         assert_eq!(ctx.style().text_styles[&egui::TextStyle::Button].size, base * 2.0);

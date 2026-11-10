@@ -24,6 +24,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 [target.'cfg(windows)'.dependencies]
 wmi = "0.13"
 
+# Encodes the README screenshots rendered by `cargo test --lib readme_screenshots -- --ignored`.
+[dev-dependencies]
+png = "0.18"
+
 [profile.release]
 opt-level = "z"
 lto = true

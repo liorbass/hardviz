@@ -227,20 +227,8 @@ impl Worker {
         crate::info!("poller stopping after {} samples", self.count.load(Ordering::Relaxed));
     }
 
-    /// Poll every source, then publish values and diagnoses. Sources do their
-    /// I/O holding only the registry lock, so a slow source never stalls
-    /// rendering; the store is locked just for the publish.
     fn sample_metrics(&self, catalogue: &[MetricId]) {
-        let Ok(mut reg) = self.registry.lock() else { return };
-        reg.poll_sources();
-        if let Ok(mut store) = self.state.store.lock() {
-            reg.publish(&mut store, catalogue);
-        }
-        let fresh: Diagnoses = catalogue.iter().map(|&id| (id, reg.diagnose(id))).collect();
-        drop(reg);
-        if let Ok(mut diag) = self.state.diagnostics.lock() {
-            *diag = fresh;
-        }
+        sample(&self.registry, &self.state, catalogue);
     }
 
     /// Periodic health snapshot: confirms samples are accumulating, since
@@ -284,6 +272,57 @@ impl ProcessJob {
         self.next_due = now + PROCESS_INTERVAL;
         let rows = self.sampler.get_or_insert_with(ProcessSampler::new).sample();
         if let Ok(mut p) = out.lock() {
+            *p = rows;
+        }
+    }
+}
+
+/// Poll every source, then publish values and diagnoses. Sources do their
+/// I/O holding only the registry lock, so a slow source never stalls
+/// rendering; the store is locked just for the publish.
+fn sample(registry: &Mutex<SourceRegistry>, state: &SharedState, catalogue: &[MetricId]) {
+    let Ok(mut reg) = registry.lock() else { return };
+    reg.poll_sources();
+    if let Ok(mut store) = state.store.lock() {
+        reg.publish(&mut store, catalogue);
+    }
+    let fresh: Diagnoses = catalogue.iter().map(|&id| (id, reg.diagnose(id))).collect();
+    drop(reg);
+    if let Ok(mut diag) = state.diagnostics.lock() {
+        *diag = fresh;
+    }
+}
+
+#[cfg(test)]
+impl Poller {
+    /// A poller without a thread: nothing is sampled until
+    /// [`Poller::sample_now`], and processes come only from
+    /// [`Poller::set_processes`]. Makes rendered frames deterministic.
+    pub(crate) fn manual(sources: Vec<Box<dyn MetricSource>>) -> Self {
+        let (commands, _inbox) = mpsc::channel();
+        let mut registry = SourceRegistry::with_disabled(std::iter::empty::<String>());
+        for s in sources {
+            registry.register(s);
+        }
+        Self {
+            state: SharedState::new(),
+            registry: Arc::new(Mutex::new(registry)),
+            count: Arc::new(AtomicU64::new(0)),
+            want_processes: Arc::new(AtomicBool::new(false)),
+            commands,
+            interval_ms: AtomicU64::new(1000),
+        }
+    }
+
+    /// Take one sample on the calling thread.
+    pub(crate) fn sample_now(&self) {
+        sample(&self.registry, &self.state, METRICS);
+        self.count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Replace the published process list.
+    pub(crate) fn set_processes(&self, rows: Vec<ProcRow>) {
+        if let Ok(mut p) = self.state.processes.lock() {
             *p = rows;
         }
     }
