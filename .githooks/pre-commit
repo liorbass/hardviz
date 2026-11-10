@@ -1,0 +1,5 @@
+#!/bin/sh
+# Format and lint check before each commit (implemented in xtask/).
+# Enable once per clone with `cargo xtask hooks`; skip one commit with
+# `git commit --no-verify`.
+exec cargo xtask pre-commit

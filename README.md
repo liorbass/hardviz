@@ -23,6 +23,10 @@ and adding a widget works with whatever source happens to supply its metrics.
 
 ![HardViz dashboard (Midnight theme, demo data): usage gauges, memory bars, sensor tiles, usage, temperature, network and disk charts, top processes](docs/images/dashboard.png)
 
+The same readings in a terminal, with `hardviz-tui` (over SSH, or in a spare pane):
+
+![HardViz terminal UI (OLED theme, demo data): usage panels, sensors, temperature, network and disk charts, top processes](docs/images/tui.png)
+
 ```mermaid
 flowchart LR
     subgraph S["Sources · poller thread"]
@@ -176,6 +180,17 @@ clean working tree, runs the same fmt / clippy / test checks as CI first
 Pushing the tag starts CI, which builds both platforms and publishes the GitHub
 release a few minutes later.
 
+**Pre-commit hook** — enable once per clone:
+
+```sh
+cargo xtask hooks
+```
+
+Before each commit it runs `cargo fmt --all --check` and `cargo clippy`, but
+only when Rust or Cargo files are staged; commits touching just docs, images or
+CI skip it instantly. Fix formatting with `cargo fmt --all`; skip the hook for
+one commit with `git commit --no-verify`.
+
 `cargo dist` on Windows bundles whatever is in `vendor/LibreHardwareMonitor/`;
 for a package with LHM, extract the
 [0.9.6 release](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/tag/v0.9.6)
@@ -284,7 +299,7 @@ the normal window back where it was.
 
 ## Terminal UI
 
-![Terminal UI (OLED theme, demo data): usage panels with bars and history, sensor strip, temperature, network and disk charts, top processes](docs/images/tui.png)
+(Screenshot at the [top](#hardviz).)
 
 `hardviz-tui` is the dashboard for a terminal: over SSH, on a machine without
 a desktop, or in a spare pane. It runs the same sources and poller as the
@@ -535,7 +550,8 @@ many history samples have accumulated.
 ```
 hardviz/
 ├── .cargo/config.toml    # cargo dist / cargo tag aliases
-├── xtask/                # their implementation: packaging, version bump + tag
+├── .githooks/pre-commit  # fmt + clippy before commits (enable: cargo xtask hooks)
+├── xtask/                # their implementation: packaging, version bump + tag, hooks
 ├── build.rs              # bundles vendor/LibreHardwareMonitor next to the exe (Windows)
 ├── vendor/               # LibreHardwareMonitor (config + license tracked; binaries added locally)
 ├── tests/pipeline.rs     # end to end: sources -> poller -> store -> widgets, config <-> registry

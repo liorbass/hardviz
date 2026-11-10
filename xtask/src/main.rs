@@ -4,6 +4,8 @@
 //! cargo dist [--name NAME]                        release build, packaged into dist/
 //! cargo tag <patch|minor|major|X.Y.Z> [--push]    check, bump the version, commit, tag
 //!           [--no-verify]
+//! cargo xtask hooks                               use the repo's git hooks (.githooks/)
+//! cargo xtask pre-commit                          what the pre-commit hook runs
 //! ```
 //!
 //! Plain Rust, no shell scripts, so the same commands work on Windows and
@@ -26,13 +28,20 @@ usage:
   cargo tag <patch|minor|major|X.Y.Z> [--push] [--no-verify]
       Run the CI checks (fmt, clippy, tests), set the version in Cargo.toml,
       commit it and create the tag vX.Y.Z. --push pushes the commit and the
-      tag (which starts the release workflow). --no-verify skips the checks.";
+      tag (which starts the release workflow). --no-verify skips the checks.
+  cargo xtask hooks
+      Point git at .githooks/ (once per clone), enabling the pre-commit hook.
+  cargo xtask pre-commit
+      The pre-commit check: fmt and clippy, only when Rust or Cargo files are
+      staged. Skip a single commit with `git commit --no-verify`.";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("dist") => dist(&args[1..]),
         Some("tag") => tag(&args[1..]),
+        Some("hooks") => hooks(),
+        Some("pre-commit") => pre_commit(),
         Some("-h" | "--help" | "help") | None => {
             println!("{USAGE}");
             Ok(())
@@ -299,6 +308,41 @@ fn tag(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------- hooks
+
+/// Use the hooks committed in `.githooks/` for this clone.
+fn hooks() -> Result<()> {
+    run(git().args(["config", "core.hooksPath", ".githooks"]))?;
+    println!("git hooks enabled: .githooks/pre-commit runs before each commit");
+    Ok(())
+}
+
+/// Whether a staged path can change what fmt or clippy report.
+fn affects_build(path: &str) -> bool {
+    Path::new(path).extension().is_some_and(|e| e == "rs")
+        || matches!(
+            Path::new(path).file_name().and_then(|n| n.to_str()),
+            Some("Cargo.toml" | "Cargo.lock" | "rustfmt.toml")
+        )
+        || path.starts_with(".cargo/")
+}
+
+/// Format and lint check before a commit, skipped when only docs, images or
+/// CI files are staged. Checks the working tree, which normally matches what
+/// is staged.
+fn pre_commit() -> Result<()> {
+    let staged = output(git().args(["diff", "--cached", "--name-only", "--diff-filter=ACMRD"]))?;
+    if !staged.lines().any(affects_build) {
+        println!("pre-commit: no Rust or Cargo changes staged, skipping checks");
+        return Ok(());
+    }
+    run(cargo().args(["fmt", "--all", "--check"]))
+        .map_err(|e| format!("{e}\nrun `cargo fmt --all`, stage the result and commit again"))?;
+    run(cargo().args(["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]))?;
+    println!("pre-commit: fmt and clippy clean");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,6 +367,18 @@ mod tests {
         let bumped = with_package_version(MANIFEST, Version(0, 5, 0)).unwrap();
         assert_eq!(bumped, MANIFEST.replace("version = \"0.4.2\"", "version = \"0.5.0\""));
         assert!(bumped.contains("foo = { version = \"1\" }"));
+    }
+
+    #[test]
+    fn only_code_and_cargo_files_trigger_the_pre_commit_checks() {
+        for path in
+            ["src/tui/view.rs", "Cargo.toml", "xtask/Cargo.toml", "Cargo.lock", "rustfmt.toml", ".cargo/config.toml"]
+        {
+            assert!(affects_build(path), "{path}");
+        }
+        for path in ["README.md", "docs/images/tui.png", ".github/workflows/ci.yml", ".gitignore"] {
+            assert!(!affects_build(path), "{path}");
+        }
     }
 
     #[test]
