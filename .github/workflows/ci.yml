@@ -29,14 +29,15 @@ jobs:
       - run: cargo fmt --all --check
 
   check:
-    # Clippy and tests run on both platforms: the LHM, ACPI and startup-task
-    # code only compiles on Windows, hwmon and diskstats only on Linux.
+    # Clippy and tests run on every platform: the LHM, ACPI and startup-task
+    # code only compiles on Windows, hwmon and diskstats only on Linux, the
+    # SMC/IOReport/ioreg sources only on macOS.
     name: Clippy + test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
 
@@ -71,6 +72,9 @@ jobs:
             name: windows-x64
           - os: ubuntu-latest
             name: linux-x64
+          # Apple Silicon runner: HardViz.app (ad-hoc signed) + hardviz-tui.
+          - os: macos-latest
+            name: macos-arm64
     steps:
       - uses: actions/checkout@v5
 
@@ -115,7 +119,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    # Pushing a tag like v0.2.0 publishes a GitHub release with both packages.
+    # Pushing a tag like v0.2.0 publishes a GitHub release with every package.
     name: GitHub release
     needs: package
     if: startsWith(github.ref, 'refs/tags/v')

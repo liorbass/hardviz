@@ -1,5 +1,5 @@
-//! The Settings panel: theme and sampling, data sources, the metric table,
-//! and the widget list.
+//! The Settings panel: the version and update check, theme and sampling,
+//! data sources, the metric table, and the widget list.
 //!
 //! Drawing only reads a snapshot and records what the user did as a
 //! [`SettingsAction`]; the action is applied after drawing, so the UI code
@@ -14,6 +14,7 @@ use crate::num::{to_f32, to_u64, total_f64};
 use crate::poller::Diagnoses;
 use crate::source::SourceInfo;
 use crate::theme::{with_alpha, ThemeName};
+use crate::update::{releases_url, UpdateStatus, VERSION};
 use eframe::egui;
 use std::collections::HashMap;
 
@@ -110,6 +111,11 @@ impl HardVizApp {
     fn settings_header(&self, ui: &mut egui::Ui, action: &mut Option<SettingsAction>) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Settings").size(self.theme.fs(14.0)).strong().color(self.theme.text_primary));
+            ui.label(
+                egui::RichText::new(format!("HardViz {VERSION}"))
+                    .size(self.theme.fs(10.0))
+                    .color(self.theme.text_muted),
+            );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let close = flat_button("\u{D7}");
                 if ui.add(close).on_hover_text("Close settings").clicked() {
@@ -245,6 +251,45 @@ impl HardVizApp {
             );
             ui.end_row();
         });
+        ui.add_space(8.0);
+        self.settings_updates(ui, draft);
+    }
+
+    /// The running version, whether a newer one exists, and the opt-out.
+    fn settings_updates(&self, ui: &mut egui::Ui, draft: &mut SettingsDraft) {
+        section_label(ui, &self.theme, "Updates");
+        ui.checkbox(&mut draft.check_updates, "Check for updates at start").on_hover_text(
+            "Once per start, asks GitHub for the latest HardViz release. \
+             Nothing about you or this computer is sent. Takes effect at the next start.",
+        );
+        let small = |text: String, color| egui::RichText::new(text).size(self.theme.fs(10.0)).color(color);
+        let muted = self.theme.text_muted;
+        ui.horizontal_wrapped(|ui| {
+            match self.update.as_ref().map(crate::update::UpdateCheck::status) {
+                None => {
+                    ui.label(small(format!("HardViz {VERSION} \u{b7} not checked this session"), muted));
+                }
+                Some(UpdateStatus::Checking) => {
+                    ui.label(small(format!("HardViz {VERSION} \u{b7} checking\u{2026}"), muted));
+                }
+                Some(UpdateStatus::UpToDate) => {
+                    ui.label(small(format!("HardViz {VERSION} is the latest version"), self.theme.success));
+                }
+                Some(UpdateStatus::Available(release)) => {
+                    ui.label(small(format!("HardViz {VERSION} \u{b7}"), muted));
+                    ui.hyperlink_to(
+                        small(format!("version {} is available", release.version), self.theme.accent),
+                        &release.url,
+                    )
+                    .on_hover_text(format!("Open the release page: {}", release.url));
+                }
+                Some(UpdateStatus::Failed(reason)) => {
+                    ui.label(small(format!("HardViz {VERSION} \u{b7} could not check for updates"), muted))
+                        .on_hover_text(reason);
+                }
+            }
+            ui.hyperlink_to(small("All releases".into(), muted), releases_url());
+        });
     }
 }
 
@@ -260,17 +305,24 @@ struct SettingsDraft {
     rate: f32,
     opacity: f32,
     scale: f32,
+    check_updates: bool,
 }
 
 impl SettingsDraft {
     fn from_config(c: &AppConfig) -> Self {
-        Self { rate: to_f32(total_f64(c.refresh_rate_ms)), opacity: c.overlay_opacity, scale: c.font_scale }
+        Self {
+            rate: to_f32(total_f64(c.refresh_rate_ms)),
+            opacity: c.overlay_opacity,
+            scale: c.font_scale,
+            check_updates: c.check_for_updates,
+        }
     }
 
     fn apply(&self, c: &mut AppConfig) {
         c.refresh_rate_ms = to_u64(self.rate);
         c.overlay_opacity = self.opacity;
         c.font_scale = self.scale;
+        c.check_for_updates = self.check_updates;
     }
 }
 
@@ -316,9 +368,30 @@ mod tests {
         let mut draft = SettingsDraft::from_config(&app.config);
         draft.rate = 750.0;
         draft.scale = 1.25;
+        draft.check_updates = false;
         draft.apply(&mut app.config);
         assert_eq!(app.config.refresh_rate_ms, 750);
         assert_eq!(app.config.font_scale, 1.25);
+        assert!(!app.config.check_for_updates);
+    }
+
+    #[test]
+    fn every_update_state_draws_in_settings_and_the_top_bar() {
+        use crate::update::{Release, UpdateCheck};
+        let (ctx, mut app) = app();
+        assert!(app.update.is_none(), "tests never start a network check");
+        app.show_settings = true;
+        let release = Release { version: "9.9.9".into(), url: "https://example.invalid/r".into() };
+        for status in [
+            UpdateStatus::Checking,
+            UpdateStatus::UpToDate,
+            UpdateStatus::Failed("offline".into()),
+            UpdateStatus::Available(release.clone()),
+        ] {
+            app.update = Some(UpdateCheck::finished(status));
+            run(&ctx, &mut app, vec![]);
+        }
+        assert_eq!(app.update.as_ref().and_then(UpdateCheck::available), Some(release));
     }
 
     #[test]

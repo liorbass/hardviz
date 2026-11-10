@@ -26,5 +26,6 @@ pub mod sources;
 pub mod startup;
 pub mod theme;
 pub mod tui;
+pub mod update;
 pub mod widget;
 pub mod widgets;

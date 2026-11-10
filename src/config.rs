@@ -138,6 +138,9 @@ pub struct AppConfig {
     /// even the minimum sizes do not fit).
     #[serde(default = "default_true")]
     pub fit_to_window: bool,
+    /// Ask GitHub for a newer release at start (Settings -> Updates).
+    #[serde(default = "default_true")]
+    pub check_for_updates: bool,
 }
 
 fn default_font_scale() -> f32 {
@@ -199,6 +202,7 @@ impl AppConfig {
             compact_pos: None,
             font_scale: default_font_scale(),
             fit_to_window: true,
+            check_for_updates: true,
         }
     }
 
@@ -331,7 +335,7 @@ mod tests {
         let cfg = AppConfig::from_json(LEGACY, &TYPES).expect("parses");
         assert_eq!(cfg.theme, ThemeName::Solarized);
         assert_eq!(cfg.refresh_rate_ms, 500);
-        assert!(cfg.widgets_locked && cfg.fit_to_window && cfg.compact_always_on_top);
+        assert!(cfg.widgets_locked && cfg.fit_to_window && cfg.compact_always_on_top && cfg.check_for_updates);
         assert_eq!(cfg.font_scale, 1.0);
         assert!(cfg.disabled_sources.is_empty());
     }

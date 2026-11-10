@@ -92,6 +92,17 @@ impl HardVizApp {
                 {
                     self.config.fit_to_window = !self.config.fit_to_window;
                 }
+                // Only when a newer release exists: a quiet link, no dialog.
+                if let Some(release) = self.update.as_ref().and_then(crate::update::UpdateCheck::available) {
+                    let text = egui::RichText::new(format!("\u{2191} Update {}", release.version))
+                        .size(self.theme.fs(10.5))
+                        .color(theme.accent);
+                    ui.hyperlink_to(text, &release.url).on_hover_text(format!(
+                        "HardViz {} is available (this is {}).\nOpens the release page.",
+                        release.version,
+                        crate::update::VERSION
+                    ));
+                }
                 // Edit-mode hint, only where it fits: in a narrow window it
                 // would run into the view-mode buttons on the left.
                 if !self.config.widgets_locked {

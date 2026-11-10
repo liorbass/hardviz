@@ -16,6 +16,7 @@ flowchart LR
     subgraph sources["Sources (poller thread)"]
         LHM["lhm_http<br/>Windows"]
         HW["hwmon / diskstats<br/>Linux"]
+        MAC["smc / ioreport / ioreg<br/>macOS"]
         NV["nvml<br/>NVIDIA"]
         SI["sysinfo<br/>all"]
     end
@@ -29,6 +30,7 @@ flowchart LR
     end
     LHM -- "out.set(id, v)" --> R
     HW -- "out.set(id, v)" --> R
+    MAC -- "out.set(id, v)" --> R
     NV -- "out.set(id, v)" --> R
     SI -- "out.set(id, v)" --> R
     R -- "push(id, Option)" --> S
@@ -132,7 +134,7 @@ flowchart TD
     L -- yes --> W1["use LibreHardwareMonitor"]
     L -- no --> A{"acpi_thermal wrote it?"}
     A -- yes --> W2["use ACPI thermal zone"]
-    A -- no --> H{"hwmon wrote it?<br/>(Linux build)"}
+    A -- no --> H{"hwmon wrote it?<br/>(Linux build; smc, then macos_sensors, on macOS)"}
     H -- yes --> W3["use hwmon"]
     H -- no --> N["push None<br/>after 3 misses the UI shows N/A + reason"]
 ```
@@ -244,10 +246,12 @@ field added since the first release has a serde default, so old files load.
 | `processes.rs` | per-process CPU / GPU / I/O / memory sampling and ranking |
 | `nvidia.rs` | loading NVML, shared by the NVML source and process sampling |
 | `config.rs` | persisted `AppConfig`, the app directory |
+| `update.rs` | the running version; the background release check started with the app |
 | `theme.rs` | colour tokens, text scale, five presets, `ThemeName` |
 | `log.rs` | leveled file + stderr logger (file only for the terminal UI) |
 | `sources/mod.rs` | `default_sources()`: the priority order |
 | `sources/lhm/` | Windows: LHM over HTTP (`http`, `parse`), starting it (`launch`), its startup task (`task`) |
+| `sources/macos/` | macOS: SMC temperatures and fans (`smc`), IOReport clocks and power (`ioreport`), sysinfo sensors (`sensors`), I/O Kit disk/GPU counters (`ioreg`) |
 
 ## Invariants worth preserving
 

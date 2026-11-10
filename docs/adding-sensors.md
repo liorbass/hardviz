@@ -9,7 +9,8 @@ flowchart LR
     B -. "automatically" .-> D["Settings → Metrics row,<br/>diagnostics, every widget<br/>that requires the id"]
 ```
 
-If an existing source can read the value (LHM, NVML, sysinfo, hwmon), you only
+If an existing source can read the value (LHM, NVML, sysinfo, hwmon, the macOS
+SMC/IOReport/ioreg sources), you only
 add a line to its `poll`. Write a new source only for a new backend.
 
 ## Worked example: GPU fan speed
@@ -179,6 +180,15 @@ flowchart LR
   picker as a pure function (`pick_cpu_temp`, `parse_readings`).
 - **Linux hwmon.** `sysinfo::Components` covers temperatures; fans and other
   `*_input` files are read straight from `/sys/class/hwmon`. No root needed.
+- **macOS: `ioreg` before FFI.** Registry properties need no `unsafe`:
+  `sources/macos/ioreg.rs` runs `/usr/sbin/ioreg -r -d 1 -c <class>` (about
+  15 ms) and pulls `"key"=number` pairs out of its text; `ioreport.rs` reads
+  the DVFS tables the same way. FFI is only for what the registry does not
+  hold: SMC keys (`smc.rs`) and IOReport samples (`ioreport.rs`).
+- **macOS private interfaces lie quietly.** Unused SMC keys read -4 °C or 0,
+  sysinfo's PMU channels about -9200 °C, and IOReport's CPU energy counter is
+  frozen for non-root readers on recent releases. Filter by range, and treat
+  a counter that never moves as unavailable rather than as zero.
 - **sysinfo on Windows: one `System` per kind of CPU refresh.** Refreshing CPU
   frequency on the `System` that measures CPU usage corrupts the usage
   (sysinfo 0.32): it reads at or near 100% regardless of load.

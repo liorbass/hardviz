@@ -29,6 +29,7 @@ use crate::poller::{Poller, SharedState, HEALTH_EVERY};
 use crate::source::MetricSource;
 use crate::sources::default_sources;
 use crate::theme::{Theme, ThemeName};
+use crate::update::UpdateCheck;
 use crate::widget::{Widget, WidgetRegistry};
 use crate::widgets::default_registry;
 use eframe::egui;
@@ -79,6 +80,10 @@ pub struct HardVizApp {
     swap_timer: f32,
     recently_swapped: Vec<String>,
 
+    /// The update check started with the app; `None` when it is turned off
+    /// (and in tests, which never touch the network).
+    update: Option<UpdateCheck>,
+
     /// The `LibreHardwareMonitor` startup task, shown in Settings.
     #[cfg(windows)]
     lhm_task: crate::sources::lhm::task::TaskController,
@@ -87,7 +92,11 @@ pub struct HardVizApp {
 impl HardVizApp {
     /// The app with the platform's default sources.
     pub fn new(ctx: &egui::Context, config: AppConfig) -> Self {
-        Self::with_sources(ctx, config, default_sources)
+        let mut app = Self::with_sources(ctx, config, default_sources);
+        if app.config.check_for_updates {
+            app.update = Some(UpdateCheck::start());
+        }
+        app
     }
 
     /// The app sampling `sources` (built on the poller thread).
@@ -124,6 +133,7 @@ impl HardVizApp {
             widget_rects: Vec::new(),
             swap_timer: 0.0,
             recently_swapped: Vec::new(),
+            update: None,
             #[cfg(windows)]
             lhm_task: crate::sources::lhm::task::TaskController::new(),
         };

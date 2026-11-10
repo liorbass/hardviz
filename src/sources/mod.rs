@@ -13,10 +13,12 @@
 pub mod acpi;
 #[cfg(target_os = "linux")]
 pub mod diskstats;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub mod hwmon;
 #[cfg(windows)]
 pub mod lhm;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod nvml;
 pub mod sysinfo_source;
 
@@ -27,14 +29,17 @@ use crate::source::MetricSource;
 /// For a metric supplied by several sources, the earliest *online* source
 /// that returns a value wins. CPU temperature is tried as LHM-over-HTTP first
 /// (most accurate), ACPI thermal zone second (rarely present on modern boards)
-/// on Windows; elsewhere hwmon via sysinfo.
+/// on Windows; the SMC, then the PMU sensors, on macOS; elsewhere hwmon via
+/// sysinfo.
 ///
 /// Constructors are cheap and have no side effects; each source does its
 /// setup on its first poll, on the poller thread, and only if enabled.
 #[must_use]
 pub fn default_sources() -> Vec<Box<dyn MetricSource>> {
     let mut sources = platform_sources();
-    // GPU family: NVML is the only provider.
+    // GPU family: NVML (NVIDIA). macOS has no NVIDIA driver; I/O Kit above
+    // supplies its GPU usage.
+    #[cfg(not(target_os = "macos"))]
     sources.push(Box::new(nvml::NvmlSource::new()));
     // CPU/RAM usage: sysinfo. Registered last so it never shadows a more
     // specific provider for metrics it also happens to expose.
@@ -55,8 +60,21 @@ fn platform_sources() -> Vec<Box<dyn MetricSource>> {
     vec![Box::new(hwmon::HwmonSource::new()), Box::new(diskstats::DiskStatsSource::new())]
 }
 
+/// macOS: SMC temperatures and fans, IOReport clocks and power, sysinfo's
+/// PMU sensors (drive temperature, CPU temperature fallback), and disk I/O
+/// and GPU usage from the I/O Kit registry. See `sources/macos/mod.rs`.
+#[cfg(target_os = "macos")]
+fn platform_sources() -> Vec<Box<dyn MetricSource>> {
+    vec![
+        Box::new(macos::smc::SmcSource::new()),
+        Box::new(macos::ioreport::IoReportSource::new()),
+        Box::new(macos::sensors::MacSensorsSource::new()),
+        Box::new(macos::ioreg::IoregSource::new()),
+    ]
+}
+
 /// Other Unix: kernel hwmon sensors through sysinfo.
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 fn platform_sources() -> Vec<Box<dyn MetricSource>> {
     vec![Box::new(hwmon::HwmonSource::new())]
 }

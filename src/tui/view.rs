@@ -3,7 +3,7 @@
 //! or a test buffer.
 //!
 //! ```text
-//!  HardViz                                                       Midnight · 1000 ms
+//!  HardViz 0.1.1  terminal                                       Midnight · 1000 ms
 //! ╭ CPU ──────────╮╭ RAM ──────────╮╭ GPU ──────────╮╭ VRAM ─────────╮
 //! │ 68%  73°C     ││ 59%  18.8/32  ││ 69%  63°C     ││ 47%  5.7/12.0 │   usage, bar,
 //! │ ██████▋░░░░░░ ││ █████▉░░░░░░░ ││ ██████▉░░░░░░ ││ ████▋░░░░░░░░ │   history
@@ -105,13 +105,22 @@ fn draw_title(f: &mut Frame, area: Rect, ui: &Ui) {
     let t = &ui.theme;
     let left = Line::from(vec![
         Span::styled(" HardViz", Style::new().fg(tc(t.accent)).add_modifier(Modifier::BOLD)),
-        Span::styled("  terminal", Style::new().fg(tc(t.text_muted))),
+        Span::styled(format!(" {}  terminal", crate::update::VERSION), Style::new().fg(tc(t.text_muted))),
     ]);
-    let right = Line::from(Span::styled(
+    let mut right = Vec::new();
+    if let Some(release) = &ui.update {
+        // The release page when the line has room for it, else just the news.
+        let long = format!("\u{2191} {} available: {}   ", release.version, release.url);
+        let room = usize::from(area.width).saturating_sub(left.width() + 22);
+        let notice =
+            if long.chars().count() <= room { long } else { format!("\u{2191} {} available   ", release.version) };
+        right.push(Span::styled(notice, Style::new().fg(tc(t.accent))));
+    }
+    right.push(Span::styled(
         format!("{} · {} ms ", ui.theme_name.label(), ui.refresh_ms),
         Style::new().fg(tc(t.text_secondary)),
-    ))
-    .right_aligned();
+    ));
+    let right = Line::from(right).right_aligned();
     f.render_widget(Paragraph::new(left), area);
     f.render_widget(Paragraph::new(right), area);
 }

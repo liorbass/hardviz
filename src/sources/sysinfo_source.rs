@@ -1,8 +1,9 @@
 //! CPU, memory and network readings via the `sysinfo` crate.
 //!
-//! Cross-platform. Provides utilisation and capacity; on Windows it cannot read
-//! CPU temperature (see `sources/lhm.rs`; Linux uses `sources/hwmon.rs`), so it simply does not claim
-//! the metric and another source fills the gap.
+//! Cross-platform. Provides utilisation and capacity; it does not read CPU
+//! temperature (Windows uses `sources/lhm.rs`, Linux `sources/hwmon.rs`, macOS
+//! `sources/macos/sensors.rs`), so it does not claim the metric and another
+//! source fills the gap.
 
 use crate::metrics::{metric, MetricId, BYTES_PER_MB};
 use crate::num::{count_f64, total_f64};
@@ -21,6 +22,10 @@ const PROVIDES: &[MetricId] = &[
     metric::NET_DOWN,
     metric::NET_UP,
 ];
+
+/// Below this a "clock" is a misread, not a reading: sysinfo derives Apple
+/// Silicon clocks from a static pmgr table, which comes out as 4 MHz on an M4.
+const MIN_PLAUSIBLE_MHZ: f64 = 100.0;
 
 /// Re-scan the adapter list this often (in polls) so a VPN or hot-plugged NIC
 /// that appears later is counted.
@@ -101,7 +106,7 @@ impl MetricSource for SysinfoSource {
         self.cpu_primed = true;
 
         let freqs: Vec<f64> =
-            self.clocks.cpus().iter().map(|c| total_f64(c.frequency())).filter(|f| *f > 0.0).collect();
+            self.clocks.cpus().iter().map(|c| total_f64(c.frequency())).filter(|f| *f >= MIN_PLAUSIBLE_MHZ).collect();
         if !freqs.is_empty() {
             out.set(metric::CPU_CLOCK, freqs.iter().sum::<f64>() / count_f64(freqs.len()));
         }

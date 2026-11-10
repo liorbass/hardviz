@@ -33,6 +33,8 @@ pub struct Ui {
     pub theme: Theme,
     pub sort: SortKey,
     pub refresh_ms: u64,
+    /// A newer release, once the update check has found one.
+    pub update: Option<crate::update::Release>,
 }
 
 impl Ui {
@@ -43,6 +45,7 @@ impl Ui {
             theme: theme_name.theme(),
             sort: SortKey::Cpu,
             refresh_ms: refresh_ms.clamp(REFRESH_MIN_MS, REFRESH_MAX_MS),
+            update: None,
         }
     }
 
@@ -87,11 +90,12 @@ pub fn run() -> io::Result<()> {
     let poller = Poller::spawn(sources::default_sources, &config.disabled_sources, config.refresh_rate_ms);
     poller.set_sample_processes(true);
     let mut ui = Ui::from_config(&config);
+    let update = config.check_for_updates.then(crate::update::UpdateCheck::start);
 
     // `init` enters raw mode and the alternate screen, and installs a panic
     // hook that restores the terminal before the panic message prints.
     let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, &poller, &mut ui);
+    let result = event_loop(&mut terminal, &poller, &mut ui, update.as_ref());
     ratatui::restore();
     match &result {
         Ok(()) => info!("terminal UI closed"),
@@ -100,10 +104,18 @@ pub fn run() -> io::Result<()> {
     result
 }
 
-fn event_loop(terminal: &mut ratatui::DefaultTerminal, poller: &Poller, ui: &mut Ui) -> io::Result<()> {
+fn event_loop(
+    terminal: &mut ratatui::DefaultTerminal,
+    poller: &Poller,
+    ui: &mut Ui,
+    update: Option<&crate::update::UpdateCheck>,
+) -> io::Result<()> {
     let state = poller.state();
     loop {
         poller.set_interval(ui.refresh_ms);
+        if ui.update.is_none() {
+            ui.update = update.and_then(crate::update::UpdateCheck::available);
+        }
         terminal.draw(|f| {
             if let Some(view) = state.lock() {
                 draw(f, &view.store, &view.processes, ui);
@@ -165,6 +177,20 @@ mod tests {
         for text in ["CPU", "RAM", "GPU", "VRAM", "Temperature", "Top processes", "blender", "quit"] {
             assert!(screen.contains(text), "missing {text:?}");
         }
+    }
+
+    #[test]
+    fn title_shows_the_version_and_a_newer_release() {
+        let mut ui = Ui::new(ThemeName::MidnightDark, 1000);
+        assert!(render(120, 40, &ui).contains(crate::update::VERSION));
+        ui.update = Some(crate::update::Release {
+            version: "9.9.9".into(),
+            url: "https://github.com/o/r/releases/tag/v9.9.9".into(),
+        });
+        let wide = render(160, 40, &ui);
+        assert!(wide.contains("9.9.9 available: https://github.com/o/r/releases/tag/v9.9.9"));
+        let narrow = render(80, 24, &ui);
+        assert!(narrow.contains("9.9.9 available") && narrow.contains("HardViz"), "short form, title intact");
     }
 
     #[test]

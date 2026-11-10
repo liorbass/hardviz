@@ -8,8 +8,8 @@
 //! cargo xtask pre-commit                          what the pre-commit hook runs
 //! ```
 //!
-//! Plain Rust, no shell scripts, so the same commands work on Windows and
-//! Linux, locally and in CI.
+//! Plain Rust, no shell scripts, so the same commands work on Windows, Linux
+//! and macOS, locally and in CI.
 
 use std::env;
 use std::fmt;
@@ -23,7 +23,8 @@ const USAGE: &str = "\
 usage:
   cargo dist [--name NAME]
       Release build of hardviz and hardviz-tui, packaged as
-      dist/hardviz-NAME.zip (Windows) or .tar.gz (elsewhere).
+      dist/hardviz-NAME.zip (Windows) or .tar.gz (elsewhere; on macOS the
+      window app is packaged as HardViz.app).
       NAME defaults to v<version>-<os>-<arch>.
   cargo tag <patch|minor|major|X.Y.Z> [--push] [--no-verify]
       Run the CI checks (fmt, clippy, tests), set the version in Cargo.toml,
@@ -194,7 +195,14 @@ fn dist(args: &[String]) -> Result<()> {
 
     for bin in ["hardviz", "hardviz-tui"] {
         let file = format!("{bin}{}", env::consts::EXE_SUFFIX);
-        copy(&release.join(&file), &folder.join(&file))?;
+        // On macOS the window app goes into an app bundle, so Finder starts it
+        // without a Terminal window; the terminal UI stays a plain binary.
+        let to = if cfg!(target_os = "macos") && bin == "hardviz" {
+            app_bundle(&folder, version)?.join(&file)
+        } else {
+            folder.join(&file)
+        };
+        copy(&release.join(&file), &to)?;
     }
     // build.rs bundles LibreHardwareMonitor next to the Windows exe.
     let lhm = release.join("LibreHardwareMonitor");
@@ -202,9 +210,16 @@ fn dist(args: &[String]) -> Result<()> {
         copy_dir(&lhm, &folder.join("LibreHardwareMonitor"))?;
     }
     copy(&root().join("README.md"), &folder.join("README.md"))?;
+    // Seal the bundle with an ad-hoc signature (Apple Silicon refuses to run
+    // unsigned code, and the linker's signature covers the binary, not the
+    // bundle). Not notarized: a downloaded copy still needs Open from Finder's
+    // context menu the first time.
+    if cfg!(target_os = "macos") {
+        run(Command::new("codesign").args(["--force", "--sign", "-"]).arg(folder.join("HardViz.app")))?;
+    }
 
-    // `tar` ships with Windows 10+ (bsdtar, which writes zip with -a) and
-    // every Linux, so packaging needs nothing else installed.
+    // `tar` ships with Windows 10+ (bsdtar, which writes zip with -a), macOS
+    // and every Linux, so packaging needs nothing else installed.
     let archive = if cfg!(windows) { format!("{folder_name}.zip") } else { format!("{folder_name}.tar.gz") };
     let _ = fs::remove_file(out_dir.join(&archive));
     let flags = if cfg!(windows) { "-a -c -f" } else { "-c -z -f" };
@@ -213,6 +228,48 @@ fn dist(args: &[String]) -> Result<()> {
     run(&mut tar)?;
     println!("packaged {}", out_dir.join(&archive).display());
     Ok(())
+}
+
+/// `HardViz.app` in `folder`, with its `Info.plist`; returns the directory the
+/// executable goes in (`Contents/MacOS`).
+fn app_bundle(folder: &Path, version: Version) -> Result<PathBuf> {
+    let contents = folder.join("HardViz.app").join("Contents");
+    let exe_dir = contents.join("MacOS");
+    fs::create_dir_all(&exe_dir).map_err(|e| format!("creating {}: {e}", exe_dir.display()))?;
+    fs::write(contents.join("Info.plist"), info_plist(version)).map_err(|e| format!("writing Info.plist: {e}"))?;
+    Ok(exe_dir)
+}
+
+fn info_plist(version: Version) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>HardViz</string>
+    <key>CFBundleDisplayName</key>
+    <string>HardViz</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.hardviz.HardViz</string>
+    <key>CFBundleExecutable</key>
+    <string>hardviz</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>{version}</string>
+    <key>CFBundleVersion</key>
+    <string>{version}</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+"#
+    )
 }
 
 fn arch_label() -> &'static str {
@@ -379,6 +436,13 @@ mod tests {
         for path in ["README.md", "docs/images/tui.png", ".github/workflows/ci.yml", ".gitignore"] {
             assert!(!affects_build(path), "{path}");
         }
+    }
+
+    #[test]
+    fn info_plist_names_the_executable_and_version() {
+        let plist = info_plist(Version(0, 4, 2));
+        assert!(plist.contains("<key>CFBundleExecutable</key>\n    <string>hardviz</string>"));
+        assert!(plist.contains("<key>CFBundleShortVersionString</key>\n    <string>0.4.2</string>"));
     }
 
     #[test]
