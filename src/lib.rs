@@ -1,7 +1,9 @@
 //! `HardViz`: a hardware monitoring dashboard.
 //!
-//! The binary (`main.rs`) only calls [`startup::run`]; everything is this
-//! library, so it can be tested end to end (`tests/`).
+//! The binaries only call into this library, so it can be tested end to end
+//! (`tests/`): `hardviz` (`main.rs`) runs [`startup::run`], the window;
+//! `hardviz-tui` (`bin/hardviz-tui.rs`) runs [`tui::run`], the terminal
+//! dashboard.
 //!
 //! Data flows one way: [`sources`] produce readings for [`metrics`] ids, the
 //! [`poller`] thread resolves them by priority ([`source`]) into the store,
@@ -23,5 +25,6 @@ pub mod source;
 pub mod sources;
 pub mod startup;
 pub mod theme;
+pub mod tui;
 pub mod widget;
 pub mod widgets;

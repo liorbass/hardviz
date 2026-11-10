@@ -14,7 +14,8 @@ use std::any::Any;
 /// # Errors
 /// The window or graphics context could not be created.
 pub fn run() -> eframe::Result<()> {
-    log::init();
+    // Without a file, lines still reach stderr; `path_label` says so.
+    let _ = log::init();
     // A panic in a GUI app otherwise vanishes with the window; capture it so
     // there is always a trail on disk.
     std::panic::set_hook(Box::new(|info| {
@@ -47,7 +48,7 @@ pub fn run() -> eframe::Result<()> {
 /// The saved config, or defaults (saying why) when there is none or it is
 /// unusable. Widget entries whose type is no longer registered are dropped,
 /// so removing a widget type cannot corrupt a saved layout.
-fn load_config() -> AppConfig {
+pub(crate) fn load_config() -> AppConfig {
     let registry = default_registry();
     let known: Vec<&str> = registry.factories().iter().map(|f| f.type_id).collect();
     let defaults = registry.default_layout();

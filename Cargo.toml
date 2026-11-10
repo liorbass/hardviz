@@ -1,6 +1,7 @@
 [package]
 name = "hardviz"
 version = "0.1.0"
+default-run = "hardviz"
 edition = "2021"
 description = "Hardware monitoring dashboard: CPU, GPU, memory, temperatures, network and disks"
 # An application, not a library for crates.io.
@@ -16,6 +17,8 @@ nvml-wrapper = "0.10"
 directories = "5"
 # Only the local-time clock, for log timestamps.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# The terminal UI (`hardviz-tui`), with its crossterm backend.
+ratatui = "0.29"
 
 # Windows builds carry two `windows` crate versions: eframe 0.29 (accesskit)
 # and wmi 0.13.4 use 0.58, while every sysinfo release up to 0.33 caps it at

@@ -95,7 +95,7 @@ jobs:
         run: |
           $dir = "hardviz-${{ matrix.name }}"
           New-Item -ItemType Directory $dir | Out-Null
-          Copy-Item target/release/hardviz.exe $dir
+          Copy-Item target/release/hardviz.exe, target/release/hardviz-tui.exe $dir
           if (Test-Path target/release/LibreHardwareMonitor) {
             Copy-Item -Recurse target/release/LibreHardwareMonitor $dir
           }
@@ -107,7 +107,7 @@ jobs:
         run: |
           dir="hardviz-${{ matrix.name }}"
           mkdir "$dir"
-          cp target/release/hardviz README.md "$dir"/
+          cp target/release/hardviz target/release/hardviz-tui README.md "$dir"/
           tar czf "$dir.tar.gz" "$dir"
 
       - uses: actions/upload-artifact@v6

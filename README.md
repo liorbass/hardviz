@@ -4,7 +4,8 @@ A hardware monitoring dashboard for Windows and Linux, built with Rust and
 [egui](https://github.com/emilk/egui). Live CPU, RAM, GPU and VRAM gauges,
 usage, temperature, network and disk charts, power/clock/fan/drive sensors, a
 sortable top-processes list, five themes, and an always-on-top compact overlay
-for keeping an eye on things while you work.
+for keeping an eye on things while you work. A terminal version,
+`hardviz-tui`, shows the same readings over SSH or in a console.
 
 Everything is pluggable through two small registries: **sources** produce
 metric readings, **widgets** consume them by id. Neither side knows about the
@@ -49,6 +50,9 @@ flowchart LR
   history keeps filling even when the window is occluded or unfocused.
 - **Self-diagnosing** — an unavailable metric renders `N/A` with the reason and
   a hover explanation; it never renders a misleading zero.
+- **Terminal UI** — `hardviz-tui`: the same sources and readings drawn in a
+  terminal (usage panels, sensors, braille charts, sortable processes), in
+  your theme's colours. See [Terminal UI](#terminal-ui).
 - **Portable** — `build.rs` copies the bundled LibreHardwareMonitor next to the
   built executable, so the release folder runs standalone.
 
@@ -68,7 +72,8 @@ flowchart LR
 ### Build and run
 
 ```sh
-cargo run --release
+cargo run --release                     # the window
+cargo run --release --bin hardviz-tui   # the terminal UI
 ```
 
 On Debian/Ubuntu, install the build dependencies first:
@@ -90,6 +95,7 @@ Release builds land in `target/release/`:
 ```
 target/release/
 ├── hardviz.exe
+├── hardviz-tui.exe           # terminal UI
 └── LibreHardwareMonitor/     # copied from vendor/ by build.rs (Windows only)
 ```
 
@@ -238,6 +244,40 @@ Its position and the always-on-top choice are saved; leaving compact mode puts
 the normal window back where it was.
 
 ---
+
+## Terminal UI
+
+![Terminal UI (OLED theme, demo data): usage panels with bars and history, sensor strip, temperature, network and disk charts, top processes](docs/images/tui.png)
+
+`hardviz-tui` is the dashboard for a terminal: over SSH, on a machine without
+a desktop, or in a spare pane. It runs the same sources and poller as the
+window, so every reading, fallback and `N/A` behaves identically.
+
+```sh
+hardviz-tui                              # from a release folder
+cargo run --release --bin hardviz-tui    # from source
+```
+
+| Key | Action |
+|---|---|
+| `q` / `Esc` / `Ctrl+C` | quit |
+| `c` `g` `i` `m` | sort processes by CPU / GPU / I/O / memory |
+| `t` | next theme |
+| `+` / `-` | refresh interval, 250–5000 ms |
+
+- **Layout** — four usage panels (two by two below 100 columns), the sensors
+  the machine reports, then temperature, network and disk charts and the
+  process table as height allows. Works down to 80×24.
+- **Config** — reads the window's saved config for its theme, refresh interval
+  and disabled sources, but never writes it; theme and refresh changes last
+  for the session.
+- **Colours** — 24-bit, from the theme. Use a terminal with true colour
+  (Windows Terminal, iTerm2, most Linux terminals); the legacy Windows console
+  host approximates them.
+- **Logging** — to `hardviz-tui.log` beside the window's log, never to the
+  screen.
+- On Windows it starts LibreHardwareMonitor exactly as the window does
+  (including the startup task, if set up).
 
 ## Data sources
 
@@ -461,8 +501,11 @@ hardviz/
 ├── vendor/               # LibreHardwareMonitor (config + license tracked; binaries added locally)
 ├── tests/pipeline.rs     # end to end: sources -> poller -> store -> widgets, config <-> registry
 └── src/
-    ├── main.rs           # logging, panic hook, config load, viewport, eframe entry
+    ├── main.rs           # the window: calls startup::run
+    ├── bin/hardviz-tui.rs # the terminal UI: calls tui::run
     ├── lib.rs            # crate root (everything else is a library, so it can be tested)
+    ├── startup.rs        # window startup: logging, panic hook, config load, viewport
+    ├── tui/              # terminal UI (ratatui): event loop, keys, and view.rs drawing
     ├── app/              # the UI shell
     │   ├── mod.rs        #   state, per-frame update, widget instances
     │   ├── dashboard.rs  #   card grid, drag-to-swap, resize grip
@@ -525,7 +568,7 @@ Most extensions are a line or two:
 
 ## Dependencies
 
-`eframe` / `egui` 0.29 (UI), `sysinfo` 0.32 (CPU/RAM, hwmon), `nvml-wrapper`
+`eframe` / `egui` 0.29 (UI), `ratatui` 0.29 with crossterm (terminal UI), `sysinfo` 0.32 (CPU/RAM, hwmon), `nvml-wrapper`
 0.10 (NVIDIA, incl. per-process GPU), `wmi` 0.13 (Windows ACPI fallback), `serde` + `serde_json`
 (config, LHM parsing), `directories` 5 (config path), `chrono` 0.4 (log
 timestamps).

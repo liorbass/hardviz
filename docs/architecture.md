@@ -229,6 +229,7 @@ field added since the first release has a serde default, so old files load.
 |---|---|
 | `main.rs` | logger, panic hook, config load, viewport, `run_native` |
 | `lib.rs` | the crate root; everything below is a library, tested in `tests/` |
+| `bin/hardviz-tui.rs`, `tui/` | the terminal front end: ratatui event loop and keys (`mod.rs`), a pure `draw` of store + processes (`view.rs`); same `Poller` and sources as the window, config read-only |
 | `app/mod.rs` | shell state, per-frame update, widget instances |
 | `app/{chrome,dashboard,settings,compact}.rs` | top bar and shortcuts, card grid, Settings panel, compact overlay |
 | `app/layout.rs` | pure grid geometry: packing, fit to window, resize |
@@ -244,7 +245,7 @@ field added since the first release has a serde default, so old files load.
 | `nvidia.rs` | loading NVML, shared by the NVML source and process sampling |
 | `config.rs` | persisted `AppConfig`, the app directory |
 | `theme.rs` | colour tokens, text scale, five presets, `ThemeName` |
-| `log.rs` | leveled file + stderr logger |
+| `log.rs` | leveled file + stderr logger (file only for the terminal UI) |
 | `sources/mod.rs` | `default_sources()`: the priority order |
 | `sources/lhm/` | Windows: LHM over HTTP (`http`, `parse`), starting it (`launch`), its startup task (`task`) |
 

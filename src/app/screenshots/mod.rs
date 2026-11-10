@@ -22,6 +22,7 @@
 
 mod demo;
 mod raster;
+mod terminal;
 
 use super::HardVizApp;
 use crate::config::{AppConfig, ViewMode};
@@ -74,6 +75,11 @@ fn demo_app(ctx: &egui::Context, shot: &Shot) -> HardVizApp {
 /// Run `app` until its gauges have settled, then rasterise the last frame
 /// at `scale` output pixels per point.
 fn render(app: &mut HardVizApp, ctx: &egui::Context, size: egui::Vec2, scale: f32) -> Canvas {
+    render_ui(ctx, size, scale, |ctx| app.frame(ctx))
+}
+
+/// Run `ui` for enough frames to settle, then rasterise the last one.
+fn render_ui(ctx: &egui::Context, size: egui::Vec2, scale: f32, mut ui: impl FnMut(&egui::Context)) -> Canvas {
     let ppp = scale * SUPERSAMPLE as f32;
     ctx.set_pixels_per_point(ppp);
     let mut textures = Textures::default();
@@ -85,7 +91,7 @@ fn render(app: &mut HardVizApp, ctx: &egui::Context, size: egui::Vec2, scale: f3
             predicted_dt: 0.05,
             ..Default::default()
         };
-        let out = ctx.run(input, |ctx| app.frame(ctx));
+        let out = ctx.run(input, &mut ui);
         textures.update(&out.textures_delta);
         output = Some(out);
     }
@@ -132,6 +138,7 @@ fn readme_screenshots() {
         &dir.join("compact.png"),
         1.5,
     );
+    terminal::shoot(ThemeName::OledBlack, &dir.join("tui.png"));
     // Theme gallery: half-size dashboards.
     for theme in ThemeName::ALL {
         let name = format!("theme-{}.png", theme.label().to_lowercase().replace(' ', "-"));
