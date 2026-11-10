@@ -1,0 +1,25 @@
+# Build output
+/target
+
+# desloppify state and report image
+.desloppify/
+scorecard.png
+
+# Local logs
+*.log
+
+# Editor / OS files
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Claude Code local skills
+.claude/
+
+# LibreHardwareMonitor binaries: extract LHM 0.9.6 into vendor/LibreHardwareMonitor/.
+# Only the customised config and the license are tracked.
+/vendor/LibreHardwareMonitor/*
+!/vendor/LibreHardwareMonitor/LibreHardwareMonitor.config
+!/vendor/LibreHardwareMonitor/LICENSE

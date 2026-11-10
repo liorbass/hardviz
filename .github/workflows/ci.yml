@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch or PR cancels the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  check:
+    # Clippy and tests run on both platforms: the LHM, ACPI and startup-task
+    # code only compiles on Windows, hwmon and diskstats only on Linux.
+    name: Clippy + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+  package:
+    # Release builds on every push to the main branch and on tags, uploaded as
+    # workflow artifacts (Actions run page -> Artifacts).
+    name: Package (${{ matrix.name }})
+    needs: [fmt, check]
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          - os: ubuntu-latest
+            name: linux-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release --locked
+
+      # build.rs copies vendor/LibreHardwareMonitor next to the Windows exe,
+      # so the zip is the same portable folder as a local release build.
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = "hardviz-${{ matrix.name }}"
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item target/release/hardviz.exe $dir
+          if (Test-Path target/release/LibreHardwareMonitor) {
+            Copy-Item -Recurse target/release/LibreHardwareMonitor $dir
+          }
+          Copy-Item README.md $dir
+          Compress-Archive -Path $dir -DestinationPath "$dir.zip"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          dir="hardviz-${{ matrix.name }}"
+          mkdir "$dir"
+          cp target/release/hardviz README.md "$dir"/
+          tar czf "$dir.tar.gz" "$dir"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hardviz-${{ matrix.name }}
+          path: |
+            hardviz-${{ matrix.name }}.zip
+            hardviz-${{ matrix.name }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    # Pushing a tag like v0.2.0 publishes a GitHub release with both packages.
+    name: GitHub release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
