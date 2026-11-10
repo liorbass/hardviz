@@ -13,7 +13,8 @@ Download the archive for your platform, put it somewhere permanent, and run it.
 Downloads: [Windows x64](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-windows-x64.zip) ·
 [Linux x64](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-linux-x64.tar.gz) ·
 [macOS Apple Silicon](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-macos-arm64.tar.gz) ·
-[all releases](https://github.com/liorbass/hardviz/releases)
+[all releases](https://github.com/liorbass/hardviz/releases) ·
+[Code signing policy](../README.md#code-signing-policy)
 
 Prefer to build it yourself? See [Build and run](building.md#build-and-run).
 

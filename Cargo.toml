@@ -4,6 +4,7 @@ version = "0.1.2"
 default-run = "hardviz"
 edition = "2021"
 description = "Hardware monitoring dashboard: CPU, GPU, memory, temperatures, network and disks"
+license = "MIT OR Apache-2.0"
 # Also where the update check looks for new releases (src/update.rs).
 repository = "https://github.com/liorbass/hardviz"
 # An application, not a library for crates.io.
@@ -38,6 +39,11 @@ wmi = "0.13"
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.9"
 core-foundation-sys = "0.8"
+
+# Embeds version information (product name, version, ...) in the Windows
+# executables: build.rs, Windows targets only. Code signing requires it.
+[build-dependencies]
+winresource = { version = "0.1", default-features = false }
 
 # Encodes the README screenshots rendered by `cargo test --lib readme_screenshots -- --ignored`.
 [dev-dependencies]

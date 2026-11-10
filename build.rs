@@ -1,5 +1,10 @@
-//! Copies the bundled `LibreHardwareMonitor` next to the built executable so
-//! the release folder is a self-contained portable package.
+//! Windows builds only:
+//!
+//! - Embeds version information (product name, version, copyright) in the
+//!   executables. Explorer shows it under Properties → Details, and code
+//!   signing (SignPath) requires product name and version to be set.
+//! - Copies the bundled `LibreHardwareMonitor` next to the built executable so
+//!   the release folder is a self-contained portable package.
 //!
 //! `HardViz` reads CPU temperature from LHM's HTTP JSON endpoint (LHM 0.9.6 has
 //! no WMI provider), so shipping the binary alongside the app lets it be
@@ -21,8 +26,13 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bundle.rs");
     println!("cargo:rerun-if-changed=vendor/LibreHardwareMonitor");
 
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    embed_version_info();
+
     // LHM is a Windows .NET app; never bundle it into non-Windows builds.
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") || !vendor.is_dir() {
+    if !vendor.is_dir() {
         return;
     }
     let Some(out_dir) = std::env::var_os("OUT_DIR").map(PathBuf::from) else { return };
@@ -30,5 +40,21 @@ fn main() {
     if let Err(e) = bundle::copy_tree(&vendor, &exe_dir.join("LibreHardwareMonitor")) {
         // Non-fatal: the app still runs, CPU temp just stays unavailable.
         println!("cargo:warning=could not bundle LibreHardwareMonitor: {e}");
+    }
+}
+
+/// The version resource of `hardviz.exe` and `hardviz-tui.exe` (both: the
+/// resource is linked into every binary of the package). The version comes
+/// from `Cargo.toml`, so it is the same in every build of a release.
+fn embed_version_info() {
+    let mut res = winresource::WindowsResource::new();
+    res.set("ProductName", "HardViz")
+        .set("FileDescription", "HardViz hardware monitor")
+        .set("CompanyName", "HardViz contributors")
+        .set("LegalCopyright", "Copyright (c) 2026 Lior Bass and the HardViz contributors. MIT OR Apache-2.0.");
+    // Fatal on purpose: a release without version information cannot be
+    // signed. `rc.exe` ships with the Windows SDK that MSVC linking needs anyway.
+    if let Err(e) = res.compile() {
+        panic!("could not embed the Windows version resource: {e}");
     }
 }

@@ -2,8 +2,9 @@
 //!
 //! ```text
 //! cargo dist [--name NAME]                        release build, packaged into dist/
-//! cargo tag <patch|minor|major|X.Y.Z> [--push]    check, bump the version, commit, tag
-//!           [--no-verify]
+//! cargo tag <patch|minor|major|X.Y.Z>            check, bump, commit, tag, push (= release)
+//!           [--no-push] [--no-verify]
+//! cargo tag --retag [--no-verify]                 retry a failed release from HEAD
 //! cargo xtask hooks                               use the repo's git hooks (.githooks/)
 //! cargo xtask pre-commit                          what the pre-commit hook runs
 //! ```
@@ -26,10 +27,15 @@ usage:
       dist/hardviz-NAME.zip (Windows) or .tar.gz (elsewhere; on macOS the
       window app is packaged as HardViz.app).
       NAME defaults to v<version>-<os>-<arch>.
-  cargo tag <patch|minor|major|X.Y.Z> [--push] [--no-verify]
+  cargo tag <patch|minor|major|X.Y.Z> [--no-push] [--no-verify]
       Run the CI checks (fmt, clippy, tests), set the version in Cargo.toml,
-      commit it and create the tag vX.Y.Z. --push pushes the commit and the
-      tag (which starts the release workflow). --no-verify skips the checks.
+      commit it, create the tag vX.Y.Z and push the commit and the tag, which
+      starts the workflow that publishes the GitHub release. --no-push stops
+      after tagging locally; --no-verify skips the checks.
+  cargo tag --retag [--no-verify]
+      Retry a release whose CI failed: run the checks, move the tag of the
+      version in Cargo.toml (vX.Y.Z) to the current commit, and push the
+      commit and the tag. Refuses if GitHub already has a release for it.
   cargo xtask hooks
       Point git at .githooks/ (once per clone), enabling the pre-commit hook.
   cargo xtask pre-commit
@@ -209,7 +215,9 @@ fn dist(args: &[String]) -> Result<()> {
     if cfg!(windows) && lhm.is_dir() {
         copy_dir(&lhm, &folder.join("LibreHardwareMonitor"))?;
     }
-    copy(&root().join("README.md"), &folder.join("README.md"))?;
+    for doc in ["README.md", "LICENSE-MIT", "LICENSE-APACHE"] {
+        copy(&root().join(doc), &folder.join(doc))?;
+    }
     // Seal the bundle with an ad-hoc signature (Apple Silicon refuses to run
     // unsigned code, and the linker's signature covers the binary, not the
     // bundle). Not notarized: a downloaded copy still needs Open from Finder's
@@ -309,15 +317,27 @@ fn copy_dir(from: &Path, to: &Path) -> Result<()> {
 
 fn tag(args: &[String]) -> Result<()> {
     let mut how = None;
-    let (mut push, mut verify) = (false, true);
+    let (mut push, mut verify, mut retag) = (true, true, false);
     for a in args {
         match a.as_str() {
+            // Pushing is the default; `--push` is still accepted.
             "--push" => push = true,
+            "--no-push" => push = false,
             "--no-verify" => verify = false,
+            "--retag" => retag = true,
             flag if flag.starts_with('-') => return Err(format!("unknown option `{flag}`\n\n{USAGE}")),
             v if how.is_none() => how = Some(v.to_string()),
             extra => return Err(format!("unexpected argument `{extra}`\n\n{USAGE}")),
         }
+    }
+    if retag {
+        if let Some(how) = how {
+            return Err(format!("--retag re-releases the version in Cargo.toml; drop `{how}`\n\n{USAGE}"));
+        }
+        if !push {
+            return Err("--retag always pushes: retrying the release is its whole job".into());
+        }
+        return retag_current(verify);
     }
     let how = how.ok_or_else(|| format!("which version? patch, minor, major or X.Y.Z\n\n{USAGE}"))?;
 
@@ -326,23 +346,15 @@ fn tag(args: &[String]) -> Result<()> {
     let next = current.bumped(&how)?;
     let tag = format!("v{next}");
 
-    if !output(git().args(["status", "--porcelain"]))?.is_empty() {
-        return Err("the working tree has uncommitted changes; commit or stash them first".into());
-    }
-    if git()
-        .args(["rev-parse", "-q", "--verify", &format!("refs/tags/{tag}")])
-        .output()
-        .is_ok_and(|o| o.status.success())
-    {
-        return Err(format!("tag {tag} already exists"));
+    require_clean_tree()?;
+    if local_tag_exists(&tag) {
+        return Err(format!("tag {tag} already exists (to retry a failed release of it: cargo tag --retag)"));
     }
     println!("{current} -> {next} (tag {tag})");
 
     // The same checks as CI, before anything changes.
     if verify {
-        run(cargo().args(["fmt", "--all", "--check"]))?;
-        run(cargo().args(["clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"]))?;
-        run(cargo().args(["test", "--workspace", "--locked"]))?;
+        checks()?;
     }
 
     if next != current {
@@ -364,6 +376,87 @@ fn tag(args: &[String]) -> Result<()> {
     }
     Ok(())
 }
+
+fn require_clean_tree() -> Result<()> {
+    if output(git().args(["status", "--porcelain"]))?.is_empty() {
+        Ok(())
+    } else {
+        Err("the working tree has uncommitted changes; commit or stash them first".into())
+    }
+}
+
+fn local_tag_exists(tag: &str) -> bool {
+    git().args(["rev-parse", "-q", "--verify", &format!("refs/tags/{tag}")]).output().is_ok_and(|o| o.status.success())
+}
+
+/// The same checks as CI.
+fn checks() -> Result<()> {
+    run(cargo().args(["fmt", "--all", "--check"]))?;
+    run(cargo().args(["clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"]))?;
+    run(cargo().args(["test", "--workspace", "--locked"]))
+}
+
+/// `cargo tag --retag`: release the current version again from HEAD, after
+/// its first CI run failed.
+fn retag_current(verify: bool) -> Result<()> {
+    let manifest = read_manifest()?;
+    let tag = format!("v{}", package_version(&manifest)?);
+    require_clean_tree()?;
+    // A published release may already have been downloaded: moving its tag
+    // would silently change what the version means. Only unreleased tags move.
+    let repo = manifest_repository(&manifest)?;
+    if github_release_exists(&repo, &tag)? {
+        return Err(format!(
+            "{tag} is already released on GitHub ({repo}/releases/tag/{tag}); \
+             release a new version instead: cargo tag patch --push"
+        ));
+    }
+    if verify {
+        checks()?;
+    }
+
+    let remote = output(git().args(["ls-remote", "--tags", "origin", &format!("refs/tags/{tag}")]))?;
+    if !remote.trim().is_empty() {
+        run(git().args(["push", "origin", &format!(":refs/tags/{tag}")]))?;
+    }
+    if local_tag_exists(&tag) {
+        run(git().args(["tag", "-d", &tag]))?;
+    }
+    run(git().args(["tag", "-a", &tag, "-m", &format!("HardViz {tag}")]))?;
+    run(git().args(["push", "origin", "HEAD"]))?;
+    run(git().args(["push", "origin", &tag]))?;
+    println!("moved {tag} to the current commit and pushed it: the release workflow is starting");
+    Ok(())
+}
+
+/// `repository = "https://github.com/owner/repo"` from the [package] section.
+fn manifest_repository(manifest: &str) -> Result<String> {
+    manifest
+        .lines()
+        .take_while(|l| !l.starts_with('[') || l.trim() == "[package]")
+        .find_map(|l| l.trim().strip_prefix("repository").map(str::trim)?.strip_prefix('=').map(str::trim))
+        .map(|v| v.trim_matches('"').trim_end_matches('/').to_string())
+        .filter(|v| v.starts_with("https://github.com/"))
+        .ok_or_else(|| "Cargo.toml has no `repository = \"https://github.com/...\"`".into())
+}
+
+/// Whether GitHub has a published release for `tag` (drafts are not public), asked through
+/// the public API with `curl`. An answer other than "found" or "not found"
+/// (offline, rate limit) is an error rather than a guess.
+fn github_release_exists(repo: &str, tag: &str) -> Result<bool> {
+    let path = repo.trim_start_matches("https://github.com/");
+    let url = format!("https://api.github.com/repos/{path}/releases/tags/{tag}");
+    let code = output(
+        Command::new("curl").args(["--silent", "--output", NULL_DEVICE, "--write-out", "%{http_code}"]).arg(&url),
+    )?;
+    match code.trim() {
+        "200" => Ok(true),
+        "404" => Ok(false),
+        other => Err(format!("could not ask GitHub whether {tag} is released (HTTP {other} from {url})")),
+    }
+}
+
+const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
 
 // ---------------------------------------------------------------- hooks
 
@@ -443,6 +536,14 @@ mod tests {
         let plist = info_plist(Version(0, 4, 2));
         assert!(plist.contains("<key>CFBundleExecutable</key>\n    <string>hardviz</string>"));
         assert!(plist.contains("<key>CFBundleShortVersionString</key>\n    <string>0.4.2</string>"));
+    }
+
+    #[test]
+    fn repository_comes_from_the_package_section() {
+        let manifest = "[package]\nname = \"x\"\nrepository = \"https://github.com/o/r/\"\n\n[dependencies]\n";
+        assert_eq!(manifest_repository(manifest).unwrap(), "https://github.com/o/r");
+        assert!(manifest_repository("[package]\nname = \"x\"\n[x]\nrepository = \"https://github.com/o/r\"").is_err());
+        assert!(manifest_repository(&read_manifest().unwrap()).is_ok(), "the real manifest names its repository");
     }
 
     #[test]

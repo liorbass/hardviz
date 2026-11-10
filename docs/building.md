@@ -102,15 +102,22 @@ Two cargo commands (aliases in `.cargo/config.toml`, implemented in `xtask/`):
 
 ```sh
 cargo dist                  # release build, packaged into dist/ (zip on Windows, tar.gz elsewhere)
-cargo tag patch --push      # release: checks, bump 0.1.0 -> 0.1.1, commit, tag v0.1.1, push
+cargo tag patch             # release: checks, bump 0.1.0 -> 0.1.1, commit, tag v0.1.1, push
+cargo tag --retag           # the release's CI failed: fix, commit, then re-release the same version
 ```
 
 `cargo tag` takes `patch`, `minor`, `major` or an exact version
 (`cargo tag 0.1.0` tags the current version without a bump). It needs a clean
 working tree, runs the same fmt / clippy / test checks as CI first
-(`--no-verify` skips them), and stops before pushing unless you pass `--push`.
-Pushing the tag starts CI, which builds every platform and publishes the
-GitHub release a few minutes later.
+(`--no-verify` skips them), then pushes the commit and the tag. The tag push
+starts CI, which builds every platform and publishes the GitHub release a few
+minutes later. `--no-push` stops after tagging locally.
+
+If that CI run fails, nothing is published. Fix the problem, commit it, and run
+`cargo tag --retag`: it runs the checks, moves the version's tag (local and on
+GitHub) to the current commit and pushes again, which starts a new release
+run. It refuses when GitHub already has a release for that version, since
+people may have downloaded it; release a new version instead.
 
 `cargo dist` on Windows bundles whatever is in `vendor/LibreHardwareMonitor/`;
 for a package with LHM, extract the

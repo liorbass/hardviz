@@ -137,4 +137,8 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
+          # Shown above the generated notes. SignPath asks for the policy to
+          # be linked from every download page.
+          body: |
+            Downloads below: Windows x64, Linux x64, macOS Apple Silicon. See the [install guide](https://github.com/liorbass/hardviz/blob/main/docs/install.md) and the [Code signing policy](https://github.com/liorbass/hardviz#code-signing-policy).
           generate_release_notes: true

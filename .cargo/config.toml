@@ -1,6 +1,7 @@
-# Project tasks, implemented in xtask/ (plain Rust, works on Windows and Linux):
+# Project tasks, implemented in xtask/ (plain Rust, works on Windows, Linux and macOS):
 #   cargo dist [--name NAME]                         release build packaged into dist/
-#   cargo tag <patch|minor|major|X.Y.Z> [--push]     checks, version bump, commit, tag
+#   cargo tag <patch|minor|major|X.Y.Z>              checks, version bump, commit, tag, push (release)
+#   cargo tag --retag                                retry a failed release from the current commit
 [alias]
 xtask = "run --quiet --package xtask --"
 dist = "run --quiet --package xtask -- dist"
