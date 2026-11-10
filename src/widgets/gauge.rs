@@ -8,11 +8,12 @@
 //! [`GaugeWidget::detail`].
 
 use crate::metrics::{MetricId, Scale, HISTORY_LEN};
-use crate::num::{count_f32, to_f32, to_u8};
+use crate::num::{count_f32, to_f32};
 use crate::theme::with_alpha;
 use crate::theme::Theme;
 use crate::widget::{Card, Widget, WidgetCtx, WidgetSize};
 use crate::widgets::chart::time_segments;
+use crate::widgets::glow::Glow;
 use egui::{Align2, Color32, Pos2, Rect, Sense, Ui, Vec2};
 
 /// Default card height; the user can resize it.
@@ -90,7 +91,8 @@ impl Widget for GaugeWidget {
 
         let width = ui.available_width().max(80.0);
         let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
-        let painter = ui.painter_at(rect);
+        // Clipped to the card, not `rect`, so the glow is not cut off.
+        let painter = ui.painter().clone();
         let (gauge_rect, spark_rect) = split_gauge(rect);
 
         let def = self.metric.def();
@@ -170,35 +172,26 @@ impl Dial<'_> {
         let sweep = end_angle - start_angle;
 
         // Track
-        painter.add(egui::Shape::line(
-            arc_points(center, radius, start_angle, end_angle, 64),
-            egui::Stroke::new(line_width, theme.gauge_bg),
-        ));
+        paint_arc(painter, center, radius, (start_angle, end_angle), line_width, |_| theme.gauge_bg);
 
         // Value arc with a soft glow behind it, both in the colour of the
         // current reading.
         // `s` is the position along the filled arc, 0 (start) to 1 (tip).
         let color_at = |s: f32| if self.severity { theme.severity_along(color, fraction, s) } else { color };
-        let now = color_at(1.0);
         let value_angle = start_angle + sweep * fraction.clamp(0.0, 1.0);
-        let value_points = arc_points(center, radius, start_angle, value_angle, 64);
-        for w in (1..3).rev() {
-            let alpha = to_u8(60.0_f32 / (count_f32(w) * 2.0));
-            painter.add(egui::Shape::line(
-                value_points.clone(),
-                egui::Stroke::new(line_width * (1.0_f32 + count_f32(w) * 0.5_f32), with_alpha(now, alpha)),
-            ));
-        }
+        // A diffuse glow in the colour under it, softly past the ends too.
+        let glow = Glow {
+            length: radius * (value_angle - start_angle),
+            half: line_width / 2.0,
+            reach: line_width * GLOW_REACH,
+            peak: GLOW_PEAK,
+        };
+        painter.add(
+            glow.mesh(|along, across| angle_to_pos(center, radius + across, start_angle + along / radius), color_at),
+        );
         // The whole arc takes on the reading's severity, fading along its
-        // length to the tip: one short piece per arc step, each overlapping
-        // the next by a point so the joins stay seamless.
-        let last = value_points.len().saturating_sub(1);
-        for start in 0..last {
-            let end = (start + 2).min(last);
-            let t = count_f32(start + end) / 2.0 / count_f32(last.max(1));
-            painter
-                .add(egui::Shape::line(value_points[start..=end].to_vec(), egui::Stroke::new(line_width, color_at(t))));
-        }
+        // length to the tip.
+        paint_arc(painter, center, radius, (start_angle, value_angle), line_width, color_at);
 
         // Ticks
         for i in 0..=10 {
@@ -233,14 +226,81 @@ impl Dial<'_> {
                 theme.text_secondary,
             );
         }
-
-        // Leading dot
-        let dot_pos = angle_to_pos(center, radius, value_angle);
-        let dot_r = (line_width * 0.30).max(1.5);
-        painter.add(egui::Shape::circle_filled(dot_pos, dot_r + 2.5, with_alpha(now, 45)));
-        painter.add(egui::Shape::circle_filled(dot_pos, dot_r, now));
     }
 }
+
+/// Points per arc: smooth at any card size.
+const ARC_SEGMENTS: usize = 64;
+/// Corner radius of an arc's square ends, as a share of half the line width:
+/// 0 is a sharp cut, 1 a full half-circle cap.
+const END_ROUNDING: f32 = 0.5;
+
+/// Corner radius of the ends of an arc `width` wide and `length` long; never
+/// more than half the length, so a short arc's two ends do not overlap.
+fn end_corner(width: f32, length: f32) -> f32 {
+    (width / 2.0 * END_ROUNDING).min(length / 2.0).max(0.0)
+}
+
+/// Stroke the arc from `angles.0` to `angles.1` (radians, increasing), its
+/// colour `color(s)` at position `s` along it (0 start, 1 end), with both ends
+/// cut square but with rounded corners - softer than a sharp cut, without a
+/// round cap bulging past the end.
+///
+/// The stroke stops one corner radius short of each end, and a convex cap
+/// polygon closes it. A colour gradient is drawn as one short piece per arc
+/// step, each overlapping the next by a point so the joins stay seamless.
+fn paint_arc(
+    painter: &egui::Painter,
+    center: Pos2,
+    radius: f32,
+    angles: (f32, f32),
+    width: f32,
+    color: impl Fn(f32) -> Color32,
+) {
+    let span = angles.1 - angles.0;
+    let length = radius * span;
+    if length < 0.5 {
+        return;
+    }
+    let corner = end_corner(width, length);
+    let trim = corner / radius;
+    let points = arc_points(center, radius, angles.0 + trim, angles.1 - trim, ARC_SEGMENTS);
+    let last = points.len() - 1;
+    for start in 0..last {
+        let end = (start + 2).min(last);
+        let along = count_f32(start + end) / 2.0 / count_f32(last);
+        let s = (trim + along * (span - 2.0 * trim)) / span;
+        painter.add(egui::Shape::line(points[start..=end].to_vec(), egui::Stroke::new(width, color(s))));
+    }
+    let half = width / 2.0;
+    for (angle, forward, s) in [(angles.0 + trim, -1.0, 0.0), (angles.1 - trim, 1.0, 1.0)] {
+        let cap = end_cap(center, radius, angle, forward, half, corner);
+        painter.add(egui::Shape::convex_polygon(cap, color(s), egui::Stroke::NONE));
+    }
+}
+
+/// The end of an arc stroke `2·half` wide that stops at `angle`: the piece
+/// `corner` long beyond it, its two outer corners rounded with radius
+/// `corner`. `forward` is +1 at the arc's end (increasing angle), -1 at its
+/// start. Overlaps the stroke by half a point, so no seam shows.
+fn end_cap(center: Pos2, radius: f32, angle: f32, forward: f32, half: f32, corner: f32) -> Vec<Pos2> {
+    const STEPS: usize = 6;
+    let n = Vec2::new(angle.cos(), angle.sin());
+    let t = Vec2::new(-angle.sin(), angle.cos()) * forward;
+    let p = center + n * radius;
+    let (inner, outer) = (p - n * (half - corner), p + n * (half - corner));
+    let quarter = |k: usize| count_f32(k) / count_f32(STEPS) * std::f32::consts::FRAC_PI_2;
+    let mut points = vec![p - n * half - t * 0.5];
+    points.extend((0..=STEPS).map(|k| inner + (t * quarter(k).sin() - n * quarter(k).cos()) * corner));
+    points.extend((0..=STEPS).map(|k| outer + (t * quarter(k).cos() + n * quarter(k).sin()) * corner));
+    points.push(p + n * half - t * 0.5);
+    points
+}
+
+/// The arc's glow: how far it diffuses, in line widths, and its opacity at
+/// the arc's edge.
+const GLOW_REACH: f32 = 0.8;
+const GLOW_PEAK: f32 = 0.24;
 
 // ---------------------------------------------------------------------------
 // Sparkline
@@ -354,6 +414,21 @@ mod tests {
         let (g, s) = split_gauge(wide);
         assert!(s.min.x > g.max.x, "sparkline beside the arc");
         assert_eq!(g.height(), 120.0);
+    }
+
+    #[test]
+    fn end_caps_round_the_corners_but_do_not_bulge() {
+        // An arc end at angle 0 on a circle of radius 100: the stroke is 20
+        // wide, so the cap spans y = 0 (radial is +x here, forward is +y).
+        let cap = end_cap(Pos2::ZERO, 100.0, 0.0, 1.0, 10.0, 5.0);
+        let reach = cap.iter().map(|p| p.y).fold(f32::MIN, f32::max);
+        assert!((reach - 5.0).abs() < 1e-4, "reaches one corner radius past the trimmed end: {reach}");
+        let (lo, hi) = cap.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| (lo.min(p.x), hi.max(p.x)));
+        assert!((lo - 90.0).abs() < 1e-4 && (hi - 110.0).abs() < 1e-4, "as wide as the stroke");
+        // The flat middle of the end: the corners leave it square, not pointed.
+        assert!(cap.iter().filter(|p| (p.y - 5.0).abs() < 1e-4).count() == 2);
+        assert_eq!(end_corner(20.0, 4.0), 2.0, "a short arc's ends do not overlap");
+        assert_eq!(end_corner(20.0, 100.0), 5.0);
     }
 
     #[test]

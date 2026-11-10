@@ -13,7 +13,7 @@
 //! top of the chart, with each one's diagnosis on hover - a missing reading
 //! never plots as a flat zero.
 
-use crate::metrics::{MetricId, HISTORY_LEN};
+use crate::metrics::MetricId;
 use crate::theme::Theme;
 use crate::widget::{Card, Widget, WidgetCtx, WidgetSize};
 use crate::widgets::chart::{draw_chart, ChartSpec, Series};
@@ -73,6 +73,10 @@ impl Widget for LineChartWidget {
         Card::new(WidgetSize::Large, DEFAULT_HEIGHT, MIN_HEIGHT)
     }
 
+    fn is_chart(&self) -> bool {
+        true
+    }
+
     fn draw(&mut self, ui: &mut Ui, ctx: &WidgetCtx, height: f32) {
         let theme = ctx.theme;
         let Some(first) = self.metrics.first().map(|id| id.def()) else { return };
@@ -87,7 +91,7 @@ impl Widget for LineChartWidget {
             let label = id.def().label;
             if ctx.has_history(id) {
                 let color = colors.get(k).copied().unwrap_or(theme.accent);
-                series.push(Series { label, color, points: ctx.history(id) });
+                series.push(Series { label, color, points: ctx.long_history(id), end: ctx.appended(id) });
             } else {
                 missing.push((label, id));
             }
@@ -95,7 +99,7 @@ impl Widget for LineChartWidget {
 
         let (y_min, y_max) = first.scale.range(series.iter().flat_map(|s| s.points.iter().copied()));
         let (y_unit, format) = first.unit.axis();
-        let window_label = crate::widgets::window_label(HISTORY_LEN, ctx.sample_interval_ms);
+        let window_label = crate::widgets::span_label(ctx.chart_span_secs * 1000);
         let spec = ChartSpec {
             series: &series,
             y_min,
@@ -104,7 +108,7 @@ impl Widget for LineChartWidget {
             height,
             danger_above: self.threshold,
             danger_color: theme.danger,
-            window: HISTORY_LEN,
+            window: ctx.chart_window(),
             window_label: &window_label,
             format,
         };

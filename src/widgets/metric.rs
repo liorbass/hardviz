@@ -71,6 +71,10 @@ impl Widget for MetricWidget {
         self.inner.draw(ui, ctx, height);
     }
 
+    fn is_chart(&self) -> bool {
+        self.inner.is_chart()
+    }
+
     fn visual(&self) -> Option<Visual> {
         Some(self.visual)
     }

@@ -5,10 +5,13 @@
 [![Downloads](https://img.shields.io/github/downloads/liorbass/hardviz/total?label=downloads)](https://github.com/liorbass/hardviz/releases)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-informational)
 ![Rust](https://img.shields.io/badge/rust-stable-orange?logo=rust)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
 [![Download for Windows](https://img.shields.io/badge/Download-Windows%20x64-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-windows-x64.zip)
 [![Download for Linux](https://img.shields.io/badge/Download-Linux%20x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-linux-x64.tar.gz)
 [![Download for macOS](https://img.shields.io/badge/Download-macOS%20Apple%20Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-macos-arm64.tar.gz)
+
+[All releases](https://github.com/liorbass/hardviz/releases) · [Code signing policy](#code-signing-policy)
 
 HardViz keep an eye on your hardware.
 
@@ -18,7 +21,6 @@ For Windows, Linux and macOS, built with Rust and [egui](https://github.com/emil
 
 This was built for my own usage, I didn't find any monitoring tool that I can setup the exact way I wanted, so we got this.
 
-
 ![HardViz dashboard (Midnight theme, demo data): usage gauges, memory bars, sensor tiles, usage, temperature, network and disk charts, top processes](docs/images/dashboard.png)
 
 Prefer a terminal? `hardviz-tui` draws the same readings in any console —
@@ -27,10 +29,10 @@ over SSH, on a machine without a desktop, or in a spare pane:
 ![HardViz terminal UI (OLED theme, demo data): usage panels, sensors, temperature, network and disk charts, top processes](docs/images/tui.png)
 
 Download, unzip, run. There is no installer, no service and no account, and
-deleting one folder is the whole uninstall. The only thing HardViz sends over
-the network is an optional update check to GitHub — a quiet link when a newer
-release exists, nothing downloaded or installed, and one checkbox turns it
-off ([details](docs/usage.md#updates)).
+deleting one folder is the whole uninstall. HardViz sends nothing over the
+network on its own. The one exception is an update check to GitHub that is
+**off unless you turn it on** — a quiet link when a newer release exists,
+nothing downloaded or installed ([details](docs/usage.md#updates)).
 
 Two promises worth making up front:
 
@@ -46,7 +48,8 @@ Two promises worth making up front:
   sparkline for the last five minutes.
 - **Charts** — CPU/GPU usage, temperatures with an 80 °C threshold line,
   network down/up and disk read/write on auto-scaled axes, RAM/VRAM capacity
-  bars — all on a rolling five-minute window.
+  bars — on a rolling window of 1 minute to 1 hour (five minutes unless you
+  change it: Settings, or right-click a chart).
 - **Sensor tiles** — CPU/GPU power and clock, the hottest drive, the fastest
   fan, each with a one-minute sparkline. Only sensors your machine actually
   reports are shown.
@@ -159,3 +162,49 @@ the tracked config.
 
 The other bundled DLLs in that folder are LHM's own dependencies and are
 covered by the same license terms.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+*Status: applied for. Until signing is active, release builds are unsigned.*
+
+**What is signed.** The Windows executables HardViz builds from this
+repository, `hardviz.exe` and `hardviz-tui.exe`, in the release packages
+published on [GitHub Releases](https://github.com/liorbass/hardviz/releases).
+They are built from source by the [CI workflow](.github/workflows/ci.yml) on a
+version tag, and every signing request is approved by hand. The bundled
+LibreHardwareMonitor files are third-party binaries and are not signed by this
+project (see [Bundled third-party binary](#bundled-third-party-binary)).
+
+**Team roles**
+
+- Committers and reviewers: [liorbass](https://github.com/liorbass)
+- Approvers: [liorbass](https://github.com/liorbass)
+
+Changes from anyone else (pull requests) are reviewed by a committer before
+they are merged.
+
+**Privacy.** This program will not transfer any information to other networked
+systems unless specifically requested by the user or the person installing or
+operating it. The only network request HardViz can make is the
+[update check](docs/usage.md#updates), which is off unless the user turns it on
+(Settings → Updates) and then asks GitHub for the latest release. On Windows,
+HardViz reads sensor values from the bundled LibreHardwareMonitor over
+`127.0.0.1` (this computer only); nothing leaves the machine.
+
+## License
+
+HardViz is licensed under either of
+
+- [Apache License, Version 2.0](LICENSE-APACHE)
+- [MIT License](LICENSE-MIT)
+
+at your option. Both files ship in every release package.
+
+Unless you explicitly state otherwise, any contribution you intentionally
+submit for inclusion in HardViz, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
+
+The bundled LibreHardwareMonitor keeps its own license (MPL-2.0); see
+[Bundled third-party binary](#bundled-third-party-binary).

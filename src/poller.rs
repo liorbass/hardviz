@@ -72,6 +72,17 @@ impl SharedState {
         })
     }
 
+    /// Keep enough history for line charts spanning `span_secs` at
+    /// `interval_ms` per sample. Cheap to call every frame.
+    pub fn keep_history_for(&self, span_secs: u64, interval_ms: u64) {
+        let samples = crate::widget::chart_samples(span_secs, interval_ms.max(MIN_INTERVAL_MS));
+        if let Ok(mut store) = self.store.lock() {
+            if store.capacity() != samples {
+                store.set_capacity(samples);
+            }
+        }
+    }
+
     /// Ease displayed values toward the latest readings (once per frame).
     pub fn advance(&self, dt: f32, rate: f32) {
         if let Ok(mut store) = self.store.lock() {

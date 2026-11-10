@@ -41,7 +41,8 @@ just rearranged the dashboard.
   "compact_pos": [1500.0, 40.0],     // last compact overlay position (null = OS default)
   "font_scale": 1.0,                 // Settings -> Text size
   "fit_to_window": true,             // scale card heights to the window
-  "check_for_updates": true          // ask GitHub for a newer release at start
+  "check_for_updates": false,        // ask GitHub for a newer release at start (opt-in)
+  "chart_span_secs": 300             // line chart time span: 60, 300, 900, 1800 or 3600
 }
 ```
 

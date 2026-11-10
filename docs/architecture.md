@@ -21,7 +21,7 @@ flowchart LR
         SI["sysinfo<br/>all"]
     end
     R["SourceRegistry<br/>resolve by priority"]
-    S[("MetricStore<br/>current · smoothed · 300-sample history")]
+    S[("MetricStore<br/>current · smoothed · history (300 samples, more for long charts)")]
     subgraph widgets["Widgets (UI thread)"]
         G["GaugeWidget"]
         C["LineChartWidget"]
@@ -154,12 +154,18 @@ One series per catalogue metric:
 | `advance(dt, rate)` | UI, once per frame | exponential ease toward `current`, frame-rate independent |
 | `smoothed(id)` → `ctx.value()` | widgets | eased value, `None` when unavailable |
 | `current(id)` → `ctx.raw()` | widgets | latest raw reading |
-| `history(id)` → `ctx.history()` | charts, sparklines | oldest first, ≤ 300 samples, `NaN` = gap |
+| `history(id)` → `ctx.history()` | gauges, bars, tiles, sparklines | oldest first, the last ≤ 300 samples, `NaN` = gap |
+| `long_history(id)` → `ctx.long_history()` | line charts | the same, up to `capacity()` samples: enough for the chart time span at the refresh interval (`set_capacity`, at most 1 h at 250 ms) |
 
 Decisions that are easy to undo by accident:
 
 - **History is a `Vec`, not a `VecDeque`**: `history()` returns one slice,
-  which a wrapped deque cannot provide.
+  which a wrapped deque cannot provide. It grows to twice the capacity before
+  the oldest half is dropped in one move, so a 14 400-sample history is not
+  shifted on every poll.
+- **Long charts average into buckets fixed to absolute sample positions**
+  (`chart::bucket_means`, anchored by `appended(id)`), so an older point keeps
+  its value as new samples arrive and the line does not shimmer.
 - **Missing samples are `NaN`, never `0`**, and every renderer breaks the line
   there (`widgets::chart::time_segments`), so a dropped reading never draws a
   line down to zero.

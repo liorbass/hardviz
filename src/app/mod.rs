@@ -177,6 +177,7 @@ impl HardVizApp {
         let dt = ctx.input(|i| i.stable_dt).min(0.05);
         self.state.advance(dt, GAUGE_SMOOTHING_RATE);
         self.poller.set_interval(self.config.refresh_rate_ms);
+        self.state.keep_history_for(self.config.chart_span_secs, self.config.refresh_rate_ms);
 
         if self.swap_timer > 0.0 {
             self.swap_timer = (self.swap_timer - dt).max(0.0);

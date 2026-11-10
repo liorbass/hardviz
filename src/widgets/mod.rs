@@ -8,6 +8,7 @@
 pub mod bar;
 pub mod chart;
 pub mod gauge;
+pub mod glow;
 pub mod line_chart;
 pub mod memory_bar;
 pub mod metric;
@@ -194,7 +195,9 @@ pub fn frame(ui: &mut Ui, theme: &Theme, title: &str, add_contents: impl FnOnce(
     }
     let mut child =
         ui.new_child(egui::UiBuilder::new().max_rect(content).layout(egui::Layout::top_down(egui::Align::Min)));
-    child.set_clip_rect(content.intersect(ui.clip_rect()));
+    // Clipped to the card, not the content area: a gauge's or bar's glow may
+    // spill into the padding around it rather than being cut off.
+    child.set_clip_rect(rect.shrink(1.0).intersect(ui.clip_rect()));
     add_contents(&mut child, content.height());
 }
 
@@ -237,7 +240,12 @@ pub fn unavailable(ui: &mut Ui, theme: &Theme, height: f32, reason: &str) {
 /// when the user changes it.
 #[must_use]
 pub fn window_label(samples: usize, interval_ms: u64) -> String {
-    let span_ms = samples as u64 * interval_ms;
+    span_label(samples as u64 * interval_ms)
+}
+
+/// A time span for a chart caption: "30 s", "5 min", "1.2 min", "1 h".
+#[must_use]
+pub fn span_label(span_ms: u64) -> String {
     let secs = span_ms / 1000;
     if secs >= 3600 && secs.is_multiple_of(3600) {
         format!("{} h", secs / 3600)
@@ -274,6 +282,8 @@ mod tests {
         assert_eq!(window_label(300, 250), "1.2 min");
         assert_eq!(window_label(300, 750), "3.8 min");
         assert_eq!(window_label(360, 10_000), "1 h");
+        assert_eq!(span_label(900_000), "15 min");
+        assert_eq!(span_label(60_000), "1 min");
     }
 
     #[test]

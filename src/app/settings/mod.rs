@@ -7,7 +7,7 @@
 
 use super::style::{card_frame, flat_button, section_label};
 use super::HardVizApp;
-use crate::config::AppConfig;
+use crate::config::{AppConfig, CHART_SPANS_SECS};
 use crate::info;
 use crate::metrics::{MetricId, METRICS};
 use crate::num::{to_f32, to_u64, total_f64};
@@ -240,9 +240,23 @@ impl HardVizApp {
             );
             ui.end_row();
 
-            ui.label("Refresh interval")
-                .on_hover_text("Time between samples. Charts always show the last 300 samples.");
+            ui.label("Refresh interval").on_hover_text(
+                "Time between samples. Gauge sparklines show the last 300 samples; \
+                 line charts show the time span below.",
+            );
             ui.add(egui::Slider::new(&mut draft.rate, 250.0..=5000.0).step_by(250.0).suffix(" ms"));
+            ui.end_row();
+
+            ui.label("Chart time span").on_hover_text(
+                "How far back the line charts reach. Also on a chart's right-click menu. \
+                 A longer span fills in as samples arrive; nothing older is kept.",
+            );
+            let span_text = |secs: u64| format!("Last {}", crate::widgets::span_label(secs * 1000));
+            egui::ComboBox::from_id_salt("chart_span").selected_text(span_text(draft.chart_span)).show_ui(ui, |ui| {
+                for secs in CHART_SPANS_SECS {
+                    ui.selectable_value(&mut draft.chart_span, secs, span_text(secs));
+                }
+            });
             ui.end_row();
 
             ui.label("Overlay opacity").on_hover_text("Background opacity of the Compact view.");
@@ -259,8 +273,10 @@ impl HardVizApp {
     fn settings_updates(&self, ui: &mut egui::Ui, draft: &mut SettingsDraft) {
         section_label(ui, &self.theme, "Updates");
         ui.checkbox(&mut draft.check_updates, "Check for updates at start").on_hover_text(
-            "Once per start, asks GitHub for the latest HardViz release. \
-             Nothing about you or this computer is sent. Takes effect at the next start.",
+            "Off unless you turn it on. Once per start, asks GitHub (api.github.com) for the \
+             latest HardViz release. Nothing about you or this computer is sent beyond the \
+             request itself, which GitHub sees like any web request (your IP address). \
+             Takes effect at the next start.",
         );
         let small = |text: String, color| egui::RichText::new(text).size(self.theme.fs(10.0)).color(color);
         let muted = self.theme.text_muted;
@@ -306,6 +322,7 @@ struct SettingsDraft {
     opacity: f32,
     scale: f32,
     check_updates: bool,
+    chart_span: u64,
 }
 
 impl SettingsDraft {
@@ -315,6 +332,7 @@ impl SettingsDraft {
             opacity: c.overlay_opacity,
             scale: c.font_scale,
             check_updates: c.check_for_updates,
+            chart_span: c.chart_span_secs,
         }
     }
 
@@ -323,6 +341,7 @@ impl SettingsDraft {
         c.overlay_opacity = self.opacity;
         c.font_scale = self.scale;
         c.check_for_updates = self.check_updates;
+        c.chart_span_secs = self.chart_span;
     }
 }
 
@@ -368,11 +387,13 @@ mod tests {
         let mut draft = SettingsDraft::from_config(&app.config);
         draft.rate = 750.0;
         draft.scale = 1.25;
-        draft.check_updates = false;
+        draft.check_updates = true;
+        draft.chart_span = 3600;
         draft.apply(&mut app.config);
+        assert_eq!(app.config.chart_span_secs, 3600);
         assert_eq!(app.config.refresh_rate_ms, 750);
         assert_eq!(app.config.font_scale, 1.25);
-        assert!(!app.config.check_for_updates);
+        assert!(app.config.check_for_updates);
     }
 
     #[test]

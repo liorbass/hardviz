@@ -24,7 +24,7 @@ of [data-sources.md](data-sources.md) cover what each sensor needs.
 | The update notice never appears, or the check fails | The check is a single request to GitHub through the system `curl`, on a background thread; offline or missing `curl` is noted in the log and in Settings → Updates and changes nothing else. See [Updates](usage.md#updates). |
 | A metric reads `N/A` but the source shows online | The source is up but returned `None` for that metric — hover the row in Settings → Metrics for the per-source diagnosis. |
 | History looks gapped | A source dropped out for ≥3 consecutive polls; gaps are stored as `NaN` and drawn as breaks rather than lines to zero. |
-| Charts are empty for the first seconds | History fills one sample per poll; 300 samples at 1 s is a 5-minute window. |
+| Charts are empty for the first seconds | History fills one sample per poll, from the start; a 1-hour chart takes an hour to fill. History is not saved between runs. |
 | Window is slow to update while unfocused | Sampling is on its own thread, so it is not; repaints are throttled by design when nothing is animating. |
 
 `hardviz.log` also emits a health snapshot every 30 polls:

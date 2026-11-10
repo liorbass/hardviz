@@ -138,9 +138,27 @@ pub struct AppConfig {
     /// even the minimum sizes do not fit).
     #[serde(default = "default_true")]
     pub fit_to_window: bool,
-    /// Ask GitHub for a newer release at start (Settings -> Updates).
-    #[serde(default = "default_true")]
+    /// Ask GitHub for a newer release at start (Settings -> Updates). Off
+    /// unless the user turns it on: HardViz contacts no server on its own.
+    #[serde(default)]
     pub check_for_updates: bool,
+    /// Time span of the line charts, in seconds; one of [`CHART_SPANS_SECS`].
+    #[serde(default = "default_chart_span")]
+    pub chart_span_secs: u64,
+}
+
+/// Time spans a line chart can show, in seconds (Settings, or right-click a chart).
+pub const CHART_SPANS_SECS: [u64; 5] = [60, 300, 900, 1800, 3600];
+
+/// The chart span that `secs` snaps to: the nearest offered one, so a
+/// hand-edited value still gives a sensible chart.
+#[must_use]
+pub fn nearest_chart_span(secs: u64) -> u64 {
+    CHART_SPANS_SECS.into_iter().min_by_key(|s| s.abs_diff(secs)).unwrap_or(300)
+}
+
+fn default_chart_span() -> u64 {
+    300
 }
 
 fn default_font_scale() -> f32 {
@@ -202,7 +220,8 @@ impl AppConfig {
             compact_pos: None,
             font_scale: default_font_scale(),
             fit_to_window: true,
-            check_for_updates: true,
+            check_for_updates: false,
+            chart_span_secs: default_chart_span(),
         }
     }
 
@@ -234,6 +253,7 @@ impl AppConfig {
     pub fn from_json(data: &str, types: &WidgetTypes) -> Result<Self, serde_json::Error> {
         let mut cfg: AppConfig = serde_json::from_str(data)?;
         cfg.replace_retired(types.replaced);
+        cfg.chart_span_secs = nearest_chart_span(cfg.chart_span_secs);
         cfg.widgets.retain(|w| types.known.contains(&w.type_id.as_str()));
         if cfg.widgets.is_empty() {
             cfg.widgets = default_instances(types.defaults);
@@ -317,6 +337,16 @@ fn default_instances(types: &[&str]) -> Vec<WidgetInstance> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_hand_edited_chart_span_snaps_to_an_offered_one() {
+        assert_eq!(nearest_chart_span(300), 300);
+        assert_eq!(nearest_chart_span(0), 60);
+        assert_eq!(nearest_chart_span(1000), 900);
+        assert_eq!(nearest_chart_span(86_400), 3600);
+        let json = LEGACY.replace(r#""overlay_opacity": 0.5"#, r#""overlay_opacity": 0.5, "chart_span_secs": 7"#);
+        assert_eq!(AppConfig::from_json(&json, &TYPES).expect("valid").chart_span_secs, 60);
+    }
+
     const TYPES: WidgetTypes =
         WidgetTypes { known: &["gauge.cpu", "chart.usage"], defaults: &["gauge.cpu"], replaced: &[] };
 
@@ -335,7 +365,9 @@ mod tests {
         let cfg = AppConfig::from_json(LEGACY, &TYPES).expect("parses");
         assert_eq!(cfg.theme, ThemeName::Solarized);
         assert_eq!(cfg.refresh_rate_ms, 500);
-        assert!(cfg.widgets_locked && cfg.fit_to_window && cfg.compact_always_on_top && cfg.check_for_updates);
+        assert!(cfg.widgets_locked && cfg.fit_to_window && cfg.compact_always_on_top);
+        assert!(!cfg.check_for_updates, "the update check is opt-in");
+        assert_eq!(cfg.chart_span_secs, 300, "charts keep their five minutes");
         assert_eq!(cfg.font_scale, 1.0);
         assert!(cfg.disabled_sources.is_empty());
     }

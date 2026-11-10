@@ -3,7 +3,7 @@
 //! or a test buffer.
 //!
 //! ```text
-//!  HardViz 0.1.1  terminal                                       Midnight · 1000 ms
+//!  HardViz 0.1.1  terminal                          Midnight · 1000 ms · 5 min charts
 //! ╭ CPU ──────────╮╭ RAM ──────────╮╭ GPU ──────────╮╭ VRAM ─────────╮
 //! │ 68%  73°C     ││ 59%  18.8/32  ││ 69%  63°C     ││ 47%  5.7/12.0 │   usage, bar,
 //! │ ██████▋░░░░░░ ││ █████▉░░░░░░░ ││ ██████▉░░░░░░ ││ ████▋░░░░░░░░ │   history
@@ -16,7 +16,7 @@
 //! ╰───────────────────────────────╯╰───────────────────────────────────╯
 //! ╭ Disk ─────────────────────────╮╭ Top processes ────────────────────╮
 //! ╰───────────────────────────────╯╰───────────────────────────────────╯
-//!  q quit  c/g/i/m sort  t theme  +/- refresh
+//!  q quit  c/g/i/m sort  t theme  w chart span  +/- refresh
 //! ```
 
 use super::Ui;
@@ -24,10 +24,12 @@ use crate::metrics::metric::{
     CPU_CLOCK, CPU_POWER, CPU_TEMP, CPU_USAGE, DISK_READ, DISK_WRITE, FAN_SPEED, GPU_CLOCK, GPU_POWER, GPU_TEMP,
     GPU_USAGE, NET_DOWN, NET_UP, RAM_TOTAL, RAM_USAGE, RAM_USED, STORAGE_TEMP, VRAM_TOTAL, VRAM_USAGE, VRAM_USED,
 };
-use crate::metrics::{MetricId, MetricKind, MetricStore, Scale, Unit, HISTORY_LEN};
-use crate::num::{count_f64, to_f32, to_u64, total_f64};
+use crate::metrics::{MetricId, MetricKind, MetricStore, Scale, Unit};
+use crate::num::{count_f64, to_f32, to_u64};
 use crate::processes::{rank, ProcRow, SortKey};
 use crate::theme::Theme;
+use crate::widget::chart_samples;
+use crate::widgets::span_label;
 use egui::Color32;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -117,7 +119,7 @@ fn draw_title(f: &mut Frame, area: Rect, ui: &Ui) {
         right.push(Span::styled(notice, Style::new().fg(tc(t.accent))));
     }
     right.push(Span::styled(
-        format!("{} · {} ms ", ui.theme_name.label(), ui.refresh_ms),
+        format!("{} · {} ms · {} charts ", ui.theme_name.label(), ui.refresh_ms, span_label(ui.chart_span_secs * 1000)),
         Style::new().fg(tc(t.text_secondary)),
     ));
     let right = Line::from(right).right_aligned();
@@ -136,6 +138,8 @@ fn draw_footer(f: &mut Frame, area: Rect, t: &Theme) {
         what(" sort by CPU/GPU/IO/mem   "),
         key("t"),
         what(" theme   "),
+        key("w"),
+        what(" chart span   "),
         key("+ -"),
         what(" refresh"),
     ]);
@@ -291,14 +295,16 @@ fn series_colors(ids: &[MetricId], t: &Theme) -> Vec<Color32> {
     }
 }
 
-/// A line chart of `ids` over the whole history, legend showing current values.
+/// A line chart of `ids` over the chart span, legend showing current values.
 fn draw_chart(f: &mut Frame, area: Rect, title: &str, ids: &[MetricId], store: &MetricStore, ui: &Ui) {
     let t = &ui.theme;
+    let window = chart_samples(ui.chart_span_secs, ui.refresh_ms);
     let series: Vec<Vec<(f64, f64)>> = ids
         .iter()
         .map(|&id| {
-            let h = store.history(id);
-            let start = HISTORY_LEN - h.len();
+            let h = store.long_history(id);
+            let h = &h[h.len().saturating_sub(window)..];
+            let start = window - h.len();
             h.iter().enumerate().filter(|(_, v)| !v.is_nan()).map(|(i, &v)| (count_f64(start + i), v)).collect()
         })
         .collect();
@@ -320,10 +326,9 @@ fn draw_chart(f: &mut Frame, area: Rect, title: &str, ids: &[MetricId], store: &
         })
         .collect();
     let muted = Style::new().fg(tc(t.text_muted));
-    let minutes = count_f64(HISTORY_LEN) * total_f64(ui.refresh_ms) / 60_000.0;
     let x = Axis::default()
-        .bounds([0.0, count_f64(HISTORY_LEN - 1)])
-        .labels([format!("-{minutes:.0} min"), "now".to_string()])
+        .bounds([0.0, count_f64(window - 1)])
+        .labels([format!("-{}", span_label(ui.chart_span_secs * 1000)), "now".to_string()])
         .style(muted);
     let y = Axis::default()
         .bounds([lo, hi])

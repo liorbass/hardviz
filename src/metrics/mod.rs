@@ -7,7 +7,7 @@
 mod store;
 mod units;
 
-pub use store::{MetricStore, HISTORY_LEN};
+pub use store::{MetricStore, HISTORY_LEN, MAX_CAPACITY};
 pub use units::{format_rate, AxisFormat, Unit, BYTES_PER_MB};
 
 use std::fmt;

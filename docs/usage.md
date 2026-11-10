@@ -73,7 +73,9 @@ Metrics), with the widget list as wrapping chips underneath.
 
 - **Theme** — five presets.
 - **Display & sampling** — text size, 80–150 % (scales all text); refresh
-  interval, 250–5000 ms in 250 ms steps (default 1000 ms); compact overlay
+  interval, 250–5000 ms in 250 ms steps (default 1000 ms); chart time span,
+  how far back the line charts reach: 1, 5, 15 or 30 minutes or 1 hour
+  (default 5 minutes; also on any chart's right-click menu); compact overlay
   opacity, 30–100 % (default 85 %).
 - **Data sources** — each registered source with a live/dot status, its reason
   when unavailable, the metrics it provides (hover), and a checkbox to disable
@@ -94,7 +96,10 @@ Metrics), with the widget list as wrapping chips underneath.
 
 ## Updates
 
-At start, HardViz asks GitHub once for its latest release (on a background
+The update check is **off by default**: HardViz contacts no server unless
+you turn it on with **Settings → Updates → Check for updates at start**.
+
+When it is on, HardViz asks GitHub once per start for its latest release (on a background
 thread, through the system `curl`, which ships with macOS, Windows 10+ and
 nearly every Linux desktop). When a newer version exists, a small
 **↑ Update x.y.z** link appears in the top bar and in Settings → Updates; it
@@ -103,10 +108,11 @@ pop-ups. The terminal UI shows the same notice in its title line.
 
 The request is a plain `GET` of
 `api.github.com/repos/liorbass/hardviz/releases/latest` with the user agent
-`HardViz/<version>`; nothing about you or the computer is sent. A failed check
-(offline, no `curl`) is noted in the log and in Settings. To turn it off,
-untick **Settings → Updates → Check for updates at start** (or set
-`"check_for_updates": false` in [configuration.md](configuration.md)); it
+`HardViz/<version>`; nothing about you or the computer is sent beyond the
+request itself (GitHub sees your IP address, as with any web request; see
+[GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)).
+A failed check (offline, no `curl`) is noted in the log and in Settings. The
+checkbox (or `"check_for_updates"` in [configuration.md](configuration.md))
 takes effect at the next start.
 
 ## Layout behaviour
@@ -136,6 +142,16 @@ a **Gauge**, **Bar**, **Line chart** or **Tile**: turn on **Edit layout** and
 pick from the menu in the card's top right corner (or right-click the card).
 The choice is saved per card. In Edit layout every card also has a **×** to
 remove it.
+
+## Chart time span
+
+Line charts show the last 5 minutes by default. Right-click any chart (or use
+**Settings → Chart time span**) to show the last 1, 5, 15 or 30 minutes or the
+last hour; the choice applies to every chart and is saved. History is kept in
+memory only, so a longer span fills in as samples arrive. When a span has more
+samples than the chart has pixels, each point on the line is the average of
+the samples behind it, so a short spike looks smaller over an hour than over a
+minute. Gauge sparklines keep their 300 samples and sensor tiles their minute.
 
 Gauges and bars span the metric's scale: 0–100 % for usage, a fixed range for
 temperatures, and the busiest recent value (rounded up) for watts, clocks and
@@ -192,6 +208,7 @@ cargo run --release --bin hardviz-tui    # from source
 | `q` / `Esc` / `Ctrl+C` | quit |
 | `c` `g` `i` `m` | sort processes by CPU / GPU / I/O / memory |
 | `t` | next theme |
+| `w` | chart time span: 1, 5, 15, 30 min, 1 h |
 | `+` / `-` | refresh interval, 250–5000 ms |
 
 - **Layout** — four usage panels (two by two below 100 columns), the sensors

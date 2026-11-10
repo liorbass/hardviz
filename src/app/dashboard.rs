@@ -4,7 +4,7 @@
 use super::layout::{cell_width, fit_rows, layout_columns, pack_rows, resize_from_pointer, CellGeo, GRID_GAP};
 use super::style::flat_button;
 use super::{HardVizApp, SWAP_ANIM_SECS};
-use crate::config::{Visual, WidgetInstance};
+use crate::config::{Visual, WidgetInstance, CHART_SPANS_SECS};
 use crate::num::{count_f32, to_u8};
 use crate::poller::StateView;
 use crate::theme::with_alpha;
@@ -172,7 +172,8 @@ impl HardVizApp {
         // (e.g. the process table's sort headers) get their clicks first.
         let menu = ui.interact(rect, egui::Id::new(("card_menu", uid)), egui::Sense::click());
         let ctx =
-            WidgetCtx::new(&view.store, &view.diagnostics, &view.processes, &self.theme, self.config.refresh_rate_ms);
+            WidgetCtx::new(&view.store, &view.diagnostics, &view.processes, &self.theme, self.config.refresh_rate_ms)
+                .chart_span(self.config.chart_span_secs);
         let widgets = &mut self.widgets;
         ui.allocate_new_ui(
             egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)),
@@ -197,20 +198,47 @@ impl HardVizApp {
             },
         );
 
-        // Single-metric cards: right-click to choose how they are drawn.
-        let Some(current) = self.widgets.get(uid).and_then(|w| w.visual()) else { return };
+        // Right-click: how a single-metric card is drawn, and the time span
+        // of line charts (one setting for all of them).
+        let Some(w) = self.widgets.get(uid) else { return };
+        let (current, is_chart) = (w.visual(), w.is_chart());
+        if current.is_none() && !is_chart {
+            return;
+        }
         let mut chosen = None;
+        let mut span = None;
+        let heading = |ui: &mut egui::Ui, text: &str| {
+            ui.label(egui::RichText::new(text).size(self.theme.fs(10.0)).color(self.theme.text_muted));
+        };
         menu.context_menu(|ui| {
-            ui.label(egui::RichText::new("Show as").size(self.theme.fs(10.0)).color(self.theme.text_muted));
-            for visual in Visual::ALL {
-                if ui.radio(current == visual, visual.label()).clicked() {
-                    chosen = Some(visual);
-                    ui.close_menu();
+            if let Some(current) = current {
+                heading(ui, "Show as");
+                for visual in Visual::ALL {
+                    if ui.radio(current == visual, visual.label()).clicked() {
+                        chosen = Some(visual);
+                        ui.close_menu();
+                    }
+                }
+            }
+            if is_chart {
+                if current.is_some() {
+                    ui.separator();
+                }
+                heading(ui, "Time span (all charts)");
+                for secs in CHART_SPANS_SECS {
+                    let label = format!("Last {}", crate::widgets::span_label(secs * 1000));
+                    if ui.radio(self.config.chart_span_secs == secs, label).clicked() {
+                        span = Some(secs);
+                        ui.close_menu();
+                    }
                 }
             }
         });
         if let Some(visual) = chosen {
             self.set_visual(uid, visual);
+        }
+        if let Some(secs) = span {
+            self.config.chart_span_secs = secs;
         }
     }
 

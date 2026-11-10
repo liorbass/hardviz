@@ -37,6 +37,8 @@ pub struct WidgetCtx<'a> {
     /// accurately (e.g. a 300-sample sparkline at 1000ms = "5 min") instead of
     /// hardcoding a duration that silently lies when the user changes the rate.
     pub sample_interval_ms: u64,
+    /// Time span line charts show (Settings -> Chart time span).
+    pub chart_span_secs: u64,
     /// Top processes, newest sample. Empty unless a visible widget's
     /// [`Widget::wants_processes`] is true, since sampling them is costly.
     pub processes: &'a [ProcRow],
@@ -53,7 +55,20 @@ impl<'a> WidgetCtx<'a> {
         theme: &'a Theme,
         sample_interval_ms: u64,
     ) -> Self {
-        Self { theme, sample_interval_ms, processes, store, diagnostics }
+        Self { theme, sample_interval_ms, chart_span_secs: 300, processes, store, diagnostics }
+    }
+
+    /// Line charts show `secs` instead of the default five minutes.
+    #[must_use]
+    pub fn chart_span(mut self, secs: u64) -> Self {
+        self.chart_span_secs = secs;
+        self
+    }
+
+    /// Samples spanning [`WidgetCtx::chart_span_secs`] at the current interval.
+    #[must_use]
+    pub fn chart_window(&self) -> usize {
+        chart_samples(self.chart_span_secs, self.sample_interval_ms)
     }
 
     /// Eased value for a metric, or `None` when unavailable.
@@ -74,6 +89,19 @@ impl<'a> WidgetCtx<'a> {
         self.store.history(id)
     }
 
+    /// Everything the store keeps of a metric, oldest first: what line charts
+    /// draw from. Longer than [`WidgetCtx::history`] when the chart span needs it.
+    #[must_use]
+    pub fn long_history(&self, id: MetricId) -> &'a [f64] {
+        self.store.long_history(id)
+    }
+
+    /// Samples ever recorded for a metric (see [`MetricStore::appended`]).
+    #[must_use]
+    pub fn appended(&self, id: MetricId) -> u64 {
+        self.store.appended(id)
+    }
+
     /// Whether any sample in the metric's history is a real reading.
     #[must_use]
     pub fn has_history(&self, id: MetricId) -> bool {
@@ -85,6 +113,14 @@ impl<'a> WidgetCtx<'a> {
     pub fn diagnosis(&self, id: MetricId) -> Option<&'a MetricDiagnosis> {
         self.diagnostics.get(&id)
     }
+}
+
+/// Samples that span `span_secs` at one sample per `interval_ms`: what the
+/// store must keep for a line chart, and how many samples the chart's x axis
+/// spans.
+#[must_use]
+pub fn chart_samples(span_secs: u64, interval_ms: u64) -> usize {
+    usize::try_from((span_secs.saturating_mul(1000)).div_ceil(interval_ms.max(1))).unwrap_or(usize::MAX).max(2)
 }
 
 /// How much horizontal space a widget wants. The dashboard groups widgets by
@@ -174,6 +210,12 @@ pub trait Widget: Send {
     /// Whether this widget reads [`WidgetCtx::processes`]. Process sampling
     /// runs only while at least one visible widget returns true.
     fn wants_processes(&self) -> bool {
+        false
+    }
+
+    /// Whether this widget draws a line chart, so its card menu offers the
+    /// chart time span.
+    fn is_chart(&self) -> bool {
         false
     }
 }

@@ -3,17 +3,26 @@
 use super::{MetricId, METRICS};
 use std::collections::HashMap;
 
+/// Samples behind gauges, bars, tiles and sparklines: [`MetricStore::history`].
 pub const HISTORY_LEN: usize = 300;
+/// Most samples [`MetricStore::set_capacity`] keeps per metric: one hour at the
+/// fastest refresh interval (250 ms): at most about 230 KB per metric,
+/// counting the trimming slack.
+pub const MAX_CAPACITY: usize = 14_400;
 /// A metric absent for this many consecutive polls is treated as gone, so a
 /// source that stops reporting fades out instead of freezing at its last value.
 const STALE_AFTER: u32 = 3;
 
 #[derive(Debug)]
 struct Series {
-    /// Samples, oldest first, at most `HISTORY_LEN`. A `Vec`, not a
-    /// `VecDeque`: `history()` returns one slice, which a wrapped deque cannot
-    /// provide.
+    /// Samples, oldest first. A `Vec`, not a `VecDeque`: `history()` returns
+    /// one slice, which a wrapped deque cannot provide. Holds up to twice the
+    /// store's capacity, so trimming the oldest is an occasional bulk move
+    /// rather than shifting thousands of samples on every poll.
     history: Vec<f64>,
+    /// Samples ever appended, so a chart can group samples into buckets that
+    /// stay put as new samples arrive.
+    appended: u64,
     current: Option<f64>,
     smoothed: f64,
     smoothed_started: bool,
@@ -21,18 +30,26 @@ struct Series {
 }
 
 impl Series {
-    /// Add a sample, dropping the oldest beyond `HISTORY_LEN`.
-    fn append(&mut self, v: f64) {
+    /// Add a sample, dropping the oldest beyond `capacity` (in bulk, once
+    /// the excess reaches `capacity`).
+    fn append(&mut self, v: f64, capacity: usize) {
         self.history.push(v);
-        if self.history.len() > HISTORY_LEN {
-            let excess = self.history.len() - HISTORY_LEN;
+        self.appended += 1;
+        if self.history.len() >= 2 * capacity {
+            let excess = self.history.len() - capacity;
             self.history.drain(..excess);
         }
     }
 
+    /// The newest `n` samples (fewer while history fills).
+    fn tail(&self, n: usize) -> &[f64] {
+        &self.history[self.history.len().saturating_sub(n)..]
+    }
+
     fn new() -> Self {
         Self {
-            history: Vec::with_capacity(HISTORY_LEN + 1),
+            history: Vec::new(),
+            appended: 0,
             current: None,
             smoothed: 0.0,
             smoothed_started: false,
@@ -47,6 +64,8 @@ impl Series {
 /// the same frame-rate-independent easing for free.
 pub struct MetricStore {
     series: HashMap<MetricId, Series>,
+    /// Samples kept per metric, at least `HISTORY_LEN`.
+    capacity: usize,
 }
 
 impl MetricStore {
@@ -56,7 +75,20 @@ impl MetricStore {
         for &id in METRICS {
             series.insert(id, Series::new());
         }
-        Self { series }
+        Self { series, capacity: HISTORY_LEN }
+    }
+
+    /// Keep `samples` per metric (clamped to `HISTORY_LEN..=MAX_CAPACITY`) for
+    /// [`MetricStore::long_history`]. Lowering it hides the excess at once;
+    /// raising it keeps what is there and lets history grow into the room.
+    pub fn set_capacity(&mut self, samples: usize) {
+        self.capacity = samples.clamp(HISTORY_LEN, MAX_CAPACITY);
+    }
+
+    /// Samples kept per metric.
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
 
     /// Record one poll result. `None` means the source could not read it.
@@ -66,13 +98,13 @@ impl MetricStore {
         if let Some(v) = value {
             s.missing_streak = 0;
             s.current = Some(v);
-            s.append(v);
+            s.append(v, self.capacity);
         } else {
             s.missing_streak += 1;
             if s.missing_streak >= STALE_AFTER {
                 s.current = None;
                 // A gap keeps every series on the same time axis.
-                s.append(f64::NAN);
+                s.append(f64::NAN, self.capacity);
             }
         }
     }
@@ -114,14 +146,25 @@ impl MetricStore {
         self.series.get(&id)?.current
     }
 
-    /// Rolling history, oldest first. `NAN` entries mark gaps where the metric
-    /// was unavailable.
+    /// The last `HISTORY_LEN` samples, oldest first. `NAN` entries mark gaps
+    /// where the metric was unavailable.
     #[must_use]
     pub fn history(&self, id: MetricId) -> &[f64] {
-        match self.series.get(&id) {
-            Some(s) => &s.history,
-            None => &[],
-        }
+        self.series.get(&id).map_or(&[], |s| s.tail(HISTORY_LEN))
+    }
+
+    /// Everything kept, up to [`MetricStore::capacity`] samples, oldest first:
+    /// what line charts draw from. `NAN` marks gaps as in `history`.
+    #[must_use]
+    pub fn long_history(&self, id: MetricId) -> &[f64] {
+        self.series.get(&id).map_or(&[], |s| s.tail(self.capacity))
+    }
+
+    /// Samples ever appended to the metric's history. The newest sample's
+    /// position in that count is `appended - 1`.
+    #[must_use]
+    pub fn appended(&self, id: MetricId) -> u64 {
+        self.series.get(&id).map_or(0, |s| s.appended)
     }
 }
 
@@ -147,6 +190,28 @@ mod tests {
         let h = store.history(CPU_USAGE);
         assert_eq!(h.len(), HISTORY_LEN);
         assert_eq!(h.last(), Some(&((HISTORY_LEN + 4) as f64)), "newest last");
+    }
+
+    #[test]
+    fn capacity_keeps_more_for_charts_and_history_stays_short() {
+        let mut store = MetricStore::new();
+        store.set_capacity(1000);
+        for i in 0..5000 {
+            store.push(CPU_USAGE, Some(f64::from(i)));
+        }
+        let long = store.long_history(CPU_USAGE);
+        assert_eq!(long.len(), 1000);
+        assert_eq!(long.first(), Some(&4000.0));
+        assert_eq!(long.last(), Some(&4999.0));
+        assert_eq!(store.history(CPU_USAGE).len(), HISTORY_LEN);
+        assert_eq!(store.history(CPU_USAGE).last(), Some(&4999.0));
+        assert_eq!(store.appended(CPU_USAGE), 5000);
+
+        store.set_capacity(10);
+        assert_eq!(store.capacity(), HISTORY_LEN, "never below the sparkline window");
+        assert_eq!(store.long_history(CPU_USAGE).len(), HISTORY_LEN);
+        store.set_capacity(usize::MAX);
+        assert_eq!(store.capacity(), MAX_CAPACITY);
     }
 
     #[test]

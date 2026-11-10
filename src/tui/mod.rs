@@ -10,7 +10,7 @@ mod view;
 
 pub use view::draw;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, CHART_SPANS_SECS};
 use crate::poller::Poller;
 use crate::processes::SortKey;
 use crate::theme::{Theme, ThemeName};
@@ -33,6 +33,8 @@ pub struct Ui {
     pub theme: Theme,
     pub sort: SortKey,
     pub refresh_ms: u64,
+    /// Time span of the line charts, one of [`CHART_SPANS_SECS`].
+    pub chart_span_secs: u64,
     /// A newer release, once the update check has found one.
     pub update: Option<crate::update::Release>,
 }
@@ -45,12 +47,13 @@ impl Ui {
             theme: theme_name.theme(),
             sort: SortKey::Cpu,
             refresh_ms: refresh_ms.clamp(REFRESH_MIN_MS, REFRESH_MAX_MS),
+            chart_span_secs: 300,
             update: None,
         }
     }
 
     fn from_config(config: &AppConfig) -> Self {
-        Self::new(config.theme, config.refresh_rate_ms)
+        Self { chart_span_secs: config.chart_span_secs, ..Self::new(config.theme, config.refresh_rate_ms) }
     }
 
     /// Apply one key press. Returns `true` when the key means quit.
@@ -67,6 +70,10 @@ impl Ui {
                 let next = all.iter().position(|&n| n == self.theme_name).map_or(0, |i| (i + 1) % all.len());
                 self.theme_name = all[next];
                 self.theme = self.theme_name.theme();
+            }
+            KeyCode::Char('w') => {
+                let next = CHART_SPANS_SECS.iter().position(|&s| s == self.chart_span_secs).map_or(1, |i| i + 1);
+                self.chart_span_secs = CHART_SPANS_SECS[next % CHART_SPANS_SECS.len()];
             }
             KeyCode::Char('+' | '=') => self.refresh_ms = (self.refresh_ms + REFRESH_STEP_MS).min(REFRESH_MAX_MS),
             KeyCode::Char('-') => {
@@ -113,6 +120,7 @@ fn event_loop(
     let state = poller.state();
     loop {
         poller.set_interval(ui.refresh_ms);
+        state.keep_history_for(ui.chart_span_secs, ui.refresh_ms);
         if ui.update.is_none() {
             ui.update = update.and_then(crate::update::UpdateCheck::available);
         }
@@ -191,6 +199,21 @@ mod tests {
         assert!(wide.contains("9.9.9 available: https://github.com/o/r/releases/tag/v9.9.9"));
         let narrow = render(80, 24, &ui);
         assert!(narrow.contains("9.9.9 available") && narrow.contains("HardViz"), "short form, title intact");
+    }
+
+    #[test]
+    fn w_cycles_the_chart_span() {
+        let mut ui = Ui::new(ThemeName::MidnightDark, 1000);
+        assert_eq!(ui.chart_span_secs, 300);
+        let mut seen = Vec::new();
+        for _ in 0..CHART_SPANS_SECS.len() {
+            ui.handle_key(KeyCode::Char('w'), KeyModifiers::NONE);
+            seen.push(ui.chart_span_secs);
+        }
+        assert_eq!(seen, [900, 1800, 3600, 60, 300]);
+        assert!(render(120, 40, &ui).contains("-5 min"));
+        ui.chart_span_secs = 3600;
+        assert!(render(120, 40, &ui).contains("-1 h"));
     }
 
     #[test]

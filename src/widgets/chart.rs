@@ -3,7 +3,7 @@
 //! Kept separate from the widgets so a new chart widget is mostly declarative:
 //! pick metrics, ranges and colours, then call [`draw_chart`].
 
-use crate::num::{count_f32, to_f32};
+use crate::num::{count_f32, floor_usize, to_f32};
 use crate::theme::with_alpha;
 use crate::theme::Theme;
 use egui::{Align2, Color32, Pos2, Rect, Sense, Ui, Vec2};
@@ -15,6 +15,10 @@ pub struct Series<'a> {
     pub color: Color32,
     /// Sampled points in plotting order. `NAN` marks a gap.
     pub points: &'a [f64],
+    /// Samples ever recorded for this series, the last of which is the last
+    /// of `points`. Anchors the buckets a long window is averaged into, so
+    /// they hold still as new samples arrive.
+    pub end: u64,
 }
 
 #[non_exhaustive]
@@ -74,6 +78,33 @@ pub fn time_segments(points: &[f64], window: usize, plot: Rect, y_at: impl Fn(f6
         segments.push(current);
     }
     segments
+}
+
+/// `points` averaged in buckets of `k` consecutive samples; a bucket without
+/// a reading is `NAN`. Buckets are fixed to absolute sample positions (`end`
+/// is the position just past the last point), so an older bucket keeps its
+/// value as new samples arrive and the line does not shimmer; only the newest,
+/// still filling bucket changes.
+#[must_use]
+pub fn bucket_means(points: &[f64], end: u64, k: usize) -> Vec<f64> {
+    let k = k.max(1) as u64;
+    let start = end.saturating_sub(points.len() as u64);
+    let mut out = Vec::with_capacity(points.len().div_ceil(usize::try_from(k).unwrap_or(1)) + 1);
+    let (mut bucket, mut sum, mut n) = (start / k, 0.0, 0_u32);
+    for (pos, &v) in (start..).zip(points) {
+        if pos / k != bucket {
+            out.push(if n == 0 { f64::NAN } else { sum / f64::from(n) });
+            (bucket, sum, n) = (pos / k, 0.0, 0);
+        }
+        if !v.is_nan() {
+            sum += v;
+            n += 1;
+        }
+    }
+    if !points.is_empty() {
+        out.push(if n == 0 { f64::NAN } else { sum / f64::from(n) });
+    }
+    out
 }
 
 /// Render a multi-series time chart with gridlines, axis labels and a legend.
@@ -145,8 +176,17 @@ pub fn draw_chart(ui: &mut Ui, theme: &Theme, spec: &ChartSpec) -> Rect {
     }
 
     let y_at = |v: f64| plot.max.y - plot.height() * to_f32(((v - spec.y_min) / span).clamp(0.0, 1.0));
+    // A long window has more samples than the plot has pixels: average them
+    // to about one point per pixel, which reads the same and draws far less.
+    let per_point = spec.window.div_ceil(floor_usize(plot.width()).max(2));
     for s in spec.series {
-        for segment in time_segments(s.points, spec.window, plot, y_at) {
+        let (points, window) = if per_point > 1 {
+            let visible = &s.points[s.points.len().saturating_sub(spec.window)..];
+            (std::borrow::Cow::Owned(bucket_means(visible, s.end, per_point)), spec.window.div_ceil(per_point))
+        } else {
+            (std::borrow::Cow::Borrowed(s.points), spec.window)
+        };
+        for segment in time_segments(&points, window, plot, y_at) {
             painter.add(egui::Shape::line(segment, egui::Stroke::new(2.0_f32, s.color)));
         }
         // Leading dot on the newest sample
@@ -208,6 +248,19 @@ mod tests {
         // 11 samples span 100 px: 10 px per step.
         assert_eq!(segs[1][0].x, 90.0);
         assert_eq!(segs[0][0].x, 60.0);
+    }
+
+    #[test]
+    fn buckets_are_anchored_to_absolute_positions() {
+        // Positions 3..8: buckets [3], [4,5], [6,7] for k = 2.
+        assert_eq!(bucket_means(&[1.0, 2.0, 4.0, f64::NAN, 6.0], 8, 2), [1.0, 3.0, 6.0]);
+        // One more sample: the older buckets keep their values.
+        let next = bucket_means(&[1.0, 2.0, 4.0, f64::NAN, 6.0, 8.0], 9, 2);
+        assert_eq!(next, [1.0, 3.0, 6.0, 8.0]);
+        let gap = bucket_means(&[f64::NAN, f64::NAN, 5.0], 4, 2);
+        assert!(gap[0].is_nan() && gap[1] == 5.0 && gap.len() == 2);
+        assert!(bucket_means(&[], 0, 4).is_empty());
+        assert_eq!(bucket_means(&[1.0, 2.0], 2, 1), [1.0, 2.0]);
     }
 
     #[test]

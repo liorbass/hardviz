@@ -55,7 +55,8 @@ impl Widget for MemoryBarWidget {
         // Measure inside the card so its margins are already subtracted.
         let width = ui.available_width().max(140.0);
         let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
-        let painter = ui.painter_at(rect);
+        // Clipped to the card, not `rect`, so the glow is not cut off.
+        let painter = ui.painter().clone();
         // Centre the two rows when the card is taller than they need.
         let y0 = rect.min.y + ((height - ROW_SPACING - BAR_HEIGHT) / 2.0).max(0.0);
         let row_rect = |y: f32| Rect::from_min_size(Pos2::new(rect.min.x, y), Vec2::new(rect.width(), BAR_HEIGHT));
@@ -64,6 +65,7 @@ impl Widget for MemoryBarWidget {
             label: "RAM",
             color: theme.metric_color(MetricKind::Ram),
             usage: ctx.value(metric::RAM_USAGE),
+            severity: metric::RAM_USAGE.def().high_is_bad(),
             amount: amount(ctx.raw(metric::RAM_USED), ctx.raw(metric::RAM_TOTAL)).unwrap_or_else(|| "N/A".into()),
         };
         // No NVIDIA GPU is common enough to say so rather than just "N/A".
@@ -75,6 +77,7 @@ impl Widget for MemoryBarWidget {
             label: "VRAM",
             color: theme.metric_color(MetricKind::Vram),
             usage: ctx.value(metric::VRAM_USAGE),
+            severity: metric::VRAM_USAGE.def().high_is_bad(),
             amount: amount(ctx.raw(metric::VRAM_USED), ctx.raw(metric::VRAM_TOTAL))
                 .unwrap_or_else(|| vram_missing.into()),
         };
@@ -113,8 +116,10 @@ impl Columns {
 struct Row {
     label: &'static str,
     color: Color32,
-    /// Percentage used; `None` draws an empty bar.
+    /// Percentage used, eased; `None` draws an empty bar.
     usage: Option<f64>,
+    /// Shift towards warning colours as it fills, like the gauges.
+    severity: bool,
     amount: String,
 }
 
@@ -129,11 +134,8 @@ impl Row {
         let bar = Rect::from_min_size(Pos2::new(cols.bar_x, y), Vec2::new(cols.bar_w, BAR_HEIGHT));
         painter.add(egui::Shape::rect_filled(bar, 3.0, theme.gauge_bg));
         if let Some(u) = self.usage {
-            let fill_w = cols.bar_w * to_f32((u / 100.0).clamp(0.0, 1.0));
-            if fill_w > 0.5 {
-                let fill = Rect::from_min_size(bar.min, Vec2::new(fill_w, BAR_HEIGHT));
-                painter.add(egui::Shape::rect_filled(fill, 3.0, self.color));
-            }
+            let fraction = to_f32(u / 100.0);
+            crate::widgets::bar::paint_fill(painter, theme, bar, 3.0, fraction, self.color, self.severity);
         }
         painter.add(egui::Shape::rect_stroke(bar, 3.0, egui::Stroke::new(0.5_f32, with_alpha(self.color, 70))));
 
