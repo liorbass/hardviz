@@ -1,5 +1,14 @@
 # HardViz
 
+[![Latest release](https://img.shields.io/github/v/release/liorbass/hardviz?sort=semver&label=release)](https://github.com/liorbass/hardviz/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/liorbass/hardviz/ci.yml?label=CI)](https://github.com/liorbass/hardviz/actions/workflows/ci.yml)
+[![Downloads](https://img.shields.io/github/downloads/liorbass/hardviz/total)](https://github.com/liorbass/hardviz/releases)
+![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
+![Rust](https://img.shields.io/badge/rust-stable-orange?logo=rust)
+
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20x64-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-windows-x64.zip)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux%20x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/liorbass/hardviz/releases/latest/download/hardviz-linux-x64.tar.gz)
+
 A hardware monitoring dashboard for Windows and Linux, built with Rust and
 [egui](https://github.com/emilk/egui). Live CPU, RAM, GPU and VRAM gauges,
 usage, temperature, network and disk charts, power/clock/fan/drive sensors, a
@@ -59,6 +68,18 @@ flowchart LR
 ---
 
 ## Quick start
+
+### Download
+
+Grab the latest build from the buttons above or the
+[releases page](https://github.com/liorbass/hardviz/releases): unzip and run, nothing to install.
+
+| Package | Contents |
+|---|---|
+| `hardviz-windows-x64.zip` | `hardviz.exe` (window), `hardviz-tui.exe` (terminal), bundled LibreHardwareMonitor for CPU temperature |
+| `hardviz-linux-x64.tar.gz` | `hardviz`, `hardviz-tui` (needs the windowing/GL libraries listed under Build and run) |
+
+Or build from source:
 
 ### Requirements
 
@@ -121,27 +142,44 @@ cargo test --lib readme_screenshots -- --ignored   # rewrites docs/images/*.png
 
 ### CI
 
-`.github/workflows/ci.yml` does not run on ordinary commits. It runs when you
-push a version tag, or when started by hand from the **Actions** tab
-(**CI** → **Run workflow**):
-
-```sh
-git tag v0.2.0
-git push origin v0.2.0
-```
+`.github/workflows/ci.yml` does not run on ordinary commits. It runs when a
+version tag is pushed (see [Packaging and releasing](#packaging-and-releasing)), or when started by hand
+from the **Actions** tab (**CI** → **Run workflow**) to check a commit and get
+test builds without publishing anything.
 
 | Job | What it does |
 |---|---|
-| Format | `cargo fmt --check` (style in `rustfmt.toml`) |
-| Clippy + test | `cargo clippy -- -D warnings` and `cargo test`, on Windows and Ubuntu (each compiles platform-only sources the other cannot) |
-| Package | release builds of `hardviz` and `hardviz-tui`, downloadable from the run's **Artifacts** (Windows zip includes LibreHardwareMonitor) |
-| GitHub release | on a `v*` tag only: publishes both packages as a release |
+| Format | `cargo fmt --all --check` (style in `rustfmt.toml`) |
+| Clippy + test | `cargo clippy --workspace -- -D warnings` and `cargo test --workspace`, on Windows and Ubuntu (each compiles platform-only sources the other cannot) |
+| Package | `cargo dist` on both platforms; the Windows job first downloads LibreHardwareMonitor 0.9.6 (checksum-pinned). Packages are downloadable from the run's **Artifacts** |
+| GitHub release | on a `v*` tag only: publishes both packages as a [release](https://github.com/liorbass/hardviz/releases), which the download buttons above always point at |
 
 Run the same checks locally before pushing:
 
 ```sh
-cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
+cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 ```
+
+### Packaging and releasing
+
+Two cargo commands (aliases in `.cargo/config.toml`, implemented in `xtask/`):
+
+```sh
+cargo dist                  # release build, packaged into dist/ (zip on Windows, tar.gz on Linux)
+cargo tag patch --push      # release: checks, bump 0.1.0 -> 0.1.1, commit, tag v0.1.1, push
+```
+
+`cargo tag` takes `patch`, `minor`, `major` or an exact
+version (`cargo tag 0.1.0` tags the current version without a bump). It needs a
+clean working tree, runs the same fmt / clippy / test checks as CI first
+(`--no-verify` skips them), and stops before pushing unless you pass `--push`.
+Pushing the tag starts CI, which builds both platforms and publishes the GitHub
+release a few minutes later.
+
+`cargo dist` on Windows bundles whatever is in `vendor/LibreHardwareMonitor/`;
+for a package with LHM, extract the
+[0.9.6 release](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/tag/v0.9.6)
+(`LibreHardwareMonitor.zip`) there first, as CI does.
 
 ---
 
@@ -496,6 +534,8 @@ many history samples have accumulated.
 
 ```
 hardviz/
+├── .cargo/config.toml    # cargo dist / cargo tag aliases
+├── xtask/                # their implementation: packaging, version bump + tag
 ├── build.rs              # bundles vendor/LibreHardwareMonitor next to the exe (Windows)
 ├── vendor/               # LibreHardwareMonitor (config + license tracked; binaries added locally)
 ├── tests/pipeline.rs     # end to end: sources -> poller -> store -> widgets, config <-> registry
@@ -577,9 +617,11 @@ timestamps).
 `vendor/LibreHardwareMonitor/` holds a redistributed copy of
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
 0.9.6, used on Windows to read CPU temperature over its HTTP JSON endpoint.
-Only its customised `LibreHardwareMonitor.config` and `LICENSE` are in git; to
-bundle LHM, extract the 0.9.6 release into that folder, keeping the tracked
-config, before building.
+Only its customised `LibreHardwareMonitor.config` and `LICENSE` are in git. CI
+downloads the official 0.9.6 `LibreHardwareMonitor.zip` (SHA-256
+`086d9f1b…c001`, byte-identical to the copy this was developed with) into that
+folder for release builds; for a local build with LHM, do the same, keeping the
+tracked config.
 
 - License: **Mozilla Public License 2.0**. The full license text is included at
   `vendor/LibreHardwareMonitor/LICENSE` and is copied next to the executable by

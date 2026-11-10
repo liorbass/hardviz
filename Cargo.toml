@@ -7,6 +7,10 @@ description = "Hardware monitoring dashboard: CPU, GPU, memory, temperatures, ne
 # An application, not a library for crates.io.
 publish = false
 
+# `xtask` holds the project tasks (`cargo dist`, `cargo tag`; see .cargo/config.toml).
+[workspace]
+members = ["xtask"]
+
 [dependencies]
 eframe = "0.29"
 egui = "0.29"

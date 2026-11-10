@@ -1,0 +1,7 @@
+# Project tasks, implemented in xtask/ (plain Rust, works on Windows and Linux):
+#   cargo dist [--name NAME]                         release build packaged into dist/
+#   cargo tag <patch|minor|major|X.Y.Z> [--push]     checks, version bump, commit, tag
+[alias]
+xtask = "run --quiet --package xtask --"
+dist = "run --quiet --package xtask -- dist"
+tag = "run --quiet --package xtask -- tag"

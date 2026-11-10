@@ -53,10 +53,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test
-        run: cargo test --locked
+        run: cargo test --workspace --locked
 
   package:
     # Release builds, uploaded as workflow artifacts (Actions run page ->
@@ -84,38 +84,34 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build release
-        run: cargo build --release --locked
-
-      # build.rs copies vendor/LibreHardwareMonitor next to the Windows exe,
-      # so the zip is the same portable folder as a local release build.
-      - name: Package (Windows)
+      # LHM's binaries are not in git (only our config and its license are):
+      # fetch the official 0.9.6 build, pinned by checksum, so the Windows zip
+      # can read CPU temperature out of the box.
+      - name: Fetch LibreHardwareMonitor 0.9.6 (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $dir = "hardviz-${{ matrix.name }}"
-          New-Item -ItemType Directory $dir | Out-Null
-          Copy-Item target/release/hardviz.exe, target/release/hardviz-tui.exe $dir
-          if (Test-Path target/release/LibreHardwareMonitor) {
-            Copy-Item -Recurse target/release/LibreHardwareMonitor $dir
+          $url = "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/download/v0.9.6/LibreHardwareMonitor.zip"
+          Invoke-WebRequest $url -OutFile lhm.zip
+          $hash = (Get-FileHash lhm.zip -Algorithm SHA256).Hash
+          if ($hash -ne "086D9F1B5A99E643EDC2CFAAAC16051685B551E4C5AC0B32A57C58C0E529C001") {
+            throw "LibreHardwareMonitor.zip checksum mismatch: $hash"
           }
-          Copy-Item README.md $dir
-          Compress-Archive -Path $dir -DestinationPath "$dir.zip"
+          # -Force overwrites binaries only: the zip has no config or license.
+          Expand-Archive lhm.zip -DestinationPath vendor/LibreHardwareMonitor -Force
 
-      - name: Package (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          dir="hardviz-${{ matrix.name }}"
-          mkdir "$dir"
-          cp target/release/hardviz target/release/hardviz-tui README.md "$dir"/
-          tar czf "$dir.tar.gz" "$dir"
+      # Same command as locally (xtask/): release build of both binaries,
+      # packaged with LHM on Windows. Fixed names, so README download links
+      # can point at releases/latest/download/<name>.
+      - name: Package
+        run: cargo dist --name ${{ matrix.name }}
 
       - uses: actions/upload-artifact@v6
         with:
           name: hardviz-${{ matrix.name }}
           path: |
-            hardviz-${{ matrix.name }}.zip
-            hardviz-${{ matrix.name }}.tar.gz
+            dist/hardviz-${{ matrix.name }}.zip
+            dist/hardviz-${{ matrix.name }}.tar.gz
           if-no-files-found: error
 
   release:

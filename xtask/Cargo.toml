@@ -1,0 +1,9 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2021"
+description = "Project tasks for HardViz: cargo dist, cargo tag"
+publish = false
+
+[dependencies]
+serde_json = "1"
