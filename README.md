@@ -77,14 +77,6 @@ On Debian/Ubuntu, install the build dependencies first:
 sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev
 ```
 
-**WSL:** the app runs under WSLg, but WSL is a virtual machine with no hardware
-sensors, so CPU temperature, fans and drive temperature read `N/A` there (GPU
-stats work through NVIDIA's WSL passthrough). If the window closes after a few
-seconds with "Connection reset by peer", force X11: `WAYLAND_DISPLAY= cargo run`.
-When building from the same checkout on both Windows and WSL, give the Linux
-build its own target dir (`CARGO_TARGET_DIR=~/.cache/hardviz-target`) so the two
-toolchains do not fight over `target/`.
-
 Release builds land in `target/release/`:
 
 ```
