@@ -1,0 +1,16 @@
+# cargo-audit settings, used by `cargo audit` locally and by the CI
+# "Dependency audit" job. Every ignored advisory says why it does not apply
+# and when to revisit it.
+
+[advisories]
+ignore = [
+    # quick-xml 0.30: quadratic duplicate-attribute check, and unbounded
+    # namespace allocation in NsReader (denial of service on untrusted XML).
+    # Reached only through eframe 0.29 -> accesskit_unix -> atspi -> zbus_xml,
+    # the Linux accessibility bridge, which parses D-Bus introspection XML
+    # from the local session bus, never data from the network or from files a
+    # stranger supplies. No semver-compatible fix exists: it goes away when
+    # eframe is upgraded past 0.29.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
