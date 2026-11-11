@@ -91,8 +91,12 @@ impl SharedState {
     }
 }
 
+/// Called on the poller thread after each publish.
+type Notify = Box<dyn Fn() + Send>;
+
 enum Command {
     SetInterval(u64),
+    OnPublish(Notify),
 }
 
 /// Owns the sampling thread. Dropping it stops the thread.
@@ -133,6 +137,7 @@ impl Poller {
             want_processes: Arc::clone(&poller.want_processes),
             inbox,
             interval: Duration::from_millis(interval_ms),
+            notify: None,
         };
         let spawned = std::thread::Builder::new().name("hardviz-poller".into()).spawn(move || {
             worker.register(sources());
@@ -171,6 +176,14 @@ impl Poller {
         self.count.load(Ordering::Relaxed)
     }
 
+    /// Call `notify` on the poller thread whenever new values or processes are
+    /// published, so a UI can redraw then instead of on its own timer (which
+    /// drifts against the poller and shows some samples late, some at once).
+    pub fn on_publish(&self, notify: impl Fn() + Send + 'static) {
+        // A send fails only if the thread is gone; nothing to notify then.
+        let _ = self.commands.send(Command::OnPublish(Box::new(notify)));
+    }
+
     /// Change the sampling interval. Cheap to call every frame: the thread is
     /// only woken when the value changes.
     pub fn set_interval(&self, ms: u64) {
@@ -190,6 +203,7 @@ struct Worker {
     want_processes: Arc<AtomicBool>,
     inbox: Receiver<Command>,
     interval: Duration,
+    notify: Option<Notify>,
 }
 
 impl Worker {
@@ -213,24 +227,41 @@ impl Worker {
 
         loop {
             let now = Instant::now();
+            let mut published = false;
             if now >= next_due {
-                next_due = now + self.interval;
+                // Fixed rate: the next sample is due one interval after this
+                // one was *due*, not after it finished, so time spent sampling
+                // (and process refreshes) does not stretch every period. After
+                // a long stall, restart the schedule rather than catch up.
+                next_due += self.interval;
+                if next_due <= now {
+                    next_due = now + self.interval;
+                }
                 self.sample_metrics(&catalogue);
+                published = true;
                 let n = self.count.fetch_add(1, Ordering::Relaxed) + 1;
                 if n.is_multiple_of(HEALTH_EVERY) {
                     self.log_health(n);
                 }
             }
-            processes.tick(now, &self.want_processes, &self.state.processes);
+            published |= processes.tick(Instant::now(), &self.want_processes, &self.state.processes);
+            if published {
+                if let Some(notify) = &self.notify {
+                    notify();
+                }
+            }
 
             // Sleep until the next sample or process refresh, waking at once
-            // for a command or when the `Poller` is dropped.
+            // for a command or when the `Poller` is dropped. `now` is re-read:
+            // sampling above may have taken a noticeable part of the interval.
+            let now = Instant::now();
             let wake = next_due.min(processes.next_due).max(now);
             match self.inbox.recv_timeout(wake - now) {
                 Ok(Command::SetInterval(ms)) => {
                     self.interval = Duration::from_millis(ms);
                     next_due = next_due.min(Instant::now() + self.interval);
                 }
+                Ok(Command::OnPublish(notify)) => self.notify = Some(notify),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -265,26 +296,29 @@ struct ProcessJob {
 
 impl ProcessJob {
     /// Sample every `PROCESS_INTERVAL` while wanted; drop the sampler and clear
-    /// the list when no widget shows processes any more.
-    fn tick(&mut self, now: Instant, wanted: &AtomicBool, out: &Mutex<Vec<ProcRow>>) {
+    /// the list when no widget shows processes any more. Returns whether the
+    /// published list changed.
+    fn tick(&mut self, now: Instant, wanted: &AtomicBool, out: &Mutex<Vec<ProcRow>>) -> bool {
         if !wanted.load(Ordering::Relaxed) {
+            // Re-check at the normal cadence for the widget appearing.
+            self.next_due = now + PROCESS_INTERVAL;
             if self.sampler.take().is_some() {
                 if let Ok(mut p) = out.lock() {
                     p.clear();
                 }
+                return true;
             }
-            // Re-check at the normal cadence for the widget appearing.
-            self.next_due = now + PROCESS_INTERVAL;
-            return;
+            return false;
         }
         if now < self.next_due && self.sampler.is_some() {
-            return;
+            return false;
         }
         self.next_due = now + PROCESS_INTERVAL;
         let rows = self.sampler.get_or_insert_with(ProcessSampler::new).sample();
         if let Ok(mut p) = out.lock() {
             *p = rows;
         }
+        true
     }
 }
 
@@ -381,6 +415,55 @@ mod tests {
         let view = state.lock().expect("locks");
         assert_eq!(view.store.current(CPU_USAGE), Some(42.0));
         assert_eq!(view.diagnostics.get(&CPU_USAGE).and_then(|d| d.provider), Some("constant"));
+    }
+
+    /// A source whose poll takes the given time to return.
+    struct Slow(Duration);
+
+    impl MetricSource for Slow {
+        fn id(&self) -> &'static str {
+            "slow"
+        }
+        fn display_name(&self) -> &'static str {
+            "slow"
+        }
+        fn provides(&self) -> &'static [MetricId] {
+            &[CPU_USAGE]
+        }
+        fn poll(&mut self, out: &mut Readings) {
+            std::thread::sleep(self.0);
+            out.set(CPU_USAGE, 1.0);
+        }
+        fn status(&self) -> SourceStatus {
+            SourceStatus::Online
+        }
+    }
+
+    #[test]
+    fn slow_sampling_does_not_stretch_the_interval() {
+        // 40 ms of work per 100 ms poll: a schedule measured from when the
+        // sample finished would take ~140 ms per poll, 2.8 s for 20.
+        let poller =
+            Poller::spawn(|| vec![Box::new(Slow(Duration::from_millis(40))) as Box<dyn MetricSource>], &[], 100);
+        wait_for(&poller, 1);
+        let start = Instant::now();
+        let deadline = start + Duration::from_secs(10);
+        while poller.poll_count() < 21 {
+            assert!(Instant::now() < deadline, "poller did not sample");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let took = start.elapsed();
+        assert!(took < Duration::from_millis(2_400), "20 polls at 100 ms took {took:?}");
+    }
+
+    #[test]
+    fn publishing_notifies() {
+        let poller = Poller::spawn(|| vec![Box::new(Constant(1.0)) as Box<dyn MetricSource>], &[], 50);
+        let (tx, rx) = mpsc::channel();
+        poller.on_publish(move || {
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(Duration::from_secs(5)).expect("notified after a sample");
     }
 
     #[test]

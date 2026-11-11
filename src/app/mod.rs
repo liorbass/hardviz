@@ -113,6 +113,12 @@ impl HardVizApp {
     /// An app reading from `poller`, which the caller has already started.
     fn with_poller(ctx: &egui::Context, config: AppConfig, poller: Poller) -> Self {
         style::install_font_fallbacks(ctx);
+        // Redraw the moment a sample lands. A repaint timer of our own runs
+        // out of phase with the poller, so samples would show up anywhere
+        // from at once to a whole interval late: two updates in quick
+        // succession, then a long gap.
+        let repaint = ctx.clone();
+        poller.on_publish(move || repaint.request_repaint());
         let mut window = WindowState::new();
         window.restore(&config);
 
@@ -243,8 +249,10 @@ impl HardVizApp {
             self.save_config();
         }
 
+        // New samples repaint via `Poller::on_publish`; this only keeps
+        // animations running, plus a slow fallback.
         let animating = self.is_animating();
-        let next = if animating { ANIM_FRAME_MS } else { self.config.refresh_rate_ms };
+        let next = if animating { ANIM_FRAME_MS } else { self.config.refresh_rate_ms.max(1000) * 5 };
         ctx.request_repaint_after(std::time::Duration::from_millis(next));
     }
 }

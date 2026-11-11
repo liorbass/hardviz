@@ -116,7 +116,12 @@ applied. **A disabled source is never polled**, so it has no side effects, such
 as LHM launching with a UAC prompt.
 
 The thread sleeps on a channel until the next sample or process refresh, so
-`set_interval` and dropping the `Poller` take effect at once. `poll_count()` is
+`set_interval` and dropping the `Poller` take effect at once. Samples run on a
+fixed-rate schedule (each is due one interval after the previous one was *due*),
+so time spent sampling does not stretch the period. After each publish the
+poller calls the `on_publish` callback; the window uses it to repaint, so a
+sample is drawn as it lands rather than on a UI timer that drifts against the
+poller. `poll_count()` is
 a monotonic counter; the app saves the config and the poller logs a health
 line every 30 polls.
 
