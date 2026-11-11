@@ -188,6 +188,17 @@ impl HardVizApp {
                 }
             }
             SettingsAction::Move(uid, delta) => self.move_widget(&uid, delta),
+            SettingsAction::ExportHistory => {
+                let result = self
+                    .state
+                    .lock()
+                    .map(|v| crate::export::write_export(&v.store, self.config.refresh_rate_ms))
+                    .unwrap_or_else(|| Err("the sampling thread is not running".into()));
+                self.export_note = Some(match result {
+                    Ok(path) => format!("Exported to {}", path.display()),
+                    Err(e) => e,
+                });
+            }
         }
     }
 
@@ -267,6 +278,26 @@ impl HardVizApp {
         });
         ui.add_space(8.0);
         self.settings_updates(ui, draft);
+        ui.add_space(8.0);
+        self.settings_data(ui, action);
+    }
+
+    /// History export: a local CSV, nothing leaves the machine.
+    fn settings_data(&self, ui: &mut egui::Ui, action: &mut Option<SettingsAction>) {
+        section_label(ui, &self.theme, "Data");
+        if ui
+            .button("Export history (CSV)")
+            .on_hover_text(
+                "Writes every metric's retained history (the chart time span) to a CSV file \
+                 next to the config, one column per metric. Gaps are empty cells, never zeros.",
+            )
+            .clicked()
+        {
+            *action = Some(SettingsAction::ExportHistory);
+        }
+        if let Some(note) = &self.export_note {
+            ui.label(egui::RichText::new(note).size(self.theme.fs(10.0)).color(self.theme.text_muted));
+        }
     }
 
     /// The running version, whether a newer one exists, and the opt-out.
@@ -353,6 +384,7 @@ enum SettingsAction {
     Remove(String),
     Move(String, isize),
     ResetSize(String),
+    ExportHistory,
 }
 
 /// One row of the metric -> provider table in settings.

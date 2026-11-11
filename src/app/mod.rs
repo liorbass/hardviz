@@ -56,6 +56,10 @@ pub struct HardVizApp {
     state: SharedState,
     /// Poll count at the last periodic config save.
     last_saved_poll: u64,
+    /// The JSON last written to disk; an unchanged config is not rewritten.
+    last_saved_json: Option<String>,
+    /// Outcome of the last history export, shown in Settings.
+    export_note: Option<String>,
 
     widget_registry: WidgetRegistry,
     /// Live widget instances keyed by config uid.
@@ -126,6 +130,8 @@ impl HardVizApp {
             state: poller.state(),
             poller,
             last_saved_poll: 0,
+            last_saved_json: None,
+            export_note: None,
             widget_registry: default_registry(),
             widgets: HashMap::new(),
             theme: config.theme.theme().with_text_scale(config.font_scale),
@@ -148,8 +154,21 @@ impl HardVizApp {
     }
 
     fn save_config(&mut self) {
-        if let Err(e) = self.config.save() {
-            crate::warn!("cannot save config to {} ({e})", AppConfig::path_label());
+        let json = match serde_json::to_string_pretty(&self.config) {
+            Ok(json) => json,
+            Err(e) => {
+                crate::warn!("cannot serialise the config ({e})");
+                return;
+            }
+        };
+        // The periodic save runs whether or not anything changed; an idle
+        // session should not rewrite the file every half minute.
+        if self.last_saved_json.as_deref() == Some(json.as_str()) {
+            return;
+        }
+        match AppConfig::write_json(&json) {
+            Ok(()) => self.last_saved_json = Some(json),
+            Err(e) => crate::warn!("cannot save config to {} ({e})", AppConfig::path_label()),
         }
     }
 

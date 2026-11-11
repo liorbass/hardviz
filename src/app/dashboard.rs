@@ -30,6 +30,7 @@ impl HardVizApp {
             height: f32,
             min: f32,
             wants_processes: bool,
+            wants_cores: bool,
         }
 
         self.widget_rects.clear();
@@ -48,12 +49,14 @@ impl HardVizApp {
                     height: w.height.unwrap_or(card.height).max(min),
                     min,
                     wants_processes: inst.wants_processes(),
+                    wants_cores: inst.wants_cores(),
                 })
             })
             .collect();
 
-        // Sample processes only while a widget on screen shows them.
+        // Sample processes and cores only while a widget on screen shows them.
         self.poller.set_sample_processes(entries.iter().any(|e| e.wants_processes));
+        self.poller.set_sample_cores(entries.iter().any(|e| e.wants_cores));
 
         // The visible width, never the content width: a vertical scroll area
         // remembers how wide its content was, so sizing from that would let
@@ -171,9 +174,15 @@ impl HardVizApp {
         // Registered before the widget draws, so the widget's own controls
         // (e.g. the process table's sort headers) get their clicks first.
         let menu = ui.interact(rect, egui::Id::new(("card_menu", uid)), egui::Sense::click());
-        let ctx =
-            WidgetCtx::new(&view.store, &view.diagnostics, &view.processes, &self.theme, self.config.refresh_rate_ms)
-                .chart_span(self.config.chart_span_secs);
+        let ctx = WidgetCtx::new(
+            &view.store,
+            &view.diagnostics,
+            &view.processes,
+            &view.cores,
+            &self.theme,
+            self.config.refresh_rate_ms,
+        )
+        .chart_span(self.config.chart_span_secs);
         let widgets = &mut self.widgets;
         ui.allocate_new_ui(
             egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)),

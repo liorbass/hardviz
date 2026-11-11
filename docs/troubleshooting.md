@@ -2,10 +2,11 @@
 
 The log is the first place to look. It is written to `<config_dir>/hardviz.log`
 (where that is depends on your OS — see
-[configuration.md](configuration.md)) **and** to stderr, truncated on each
-start so one run is one file, and a panic hook records crashes that take the
-window with them. The terminal UI logs to `hardviz-tui.log` beside it, never to
-the screen.
+[configuration.md](configuration.md)) **and** to stderr; each start keeps the
+previous run's log as `hardviz.log.1`, so restarting to check on a problem
+does not destroy the evidence of it. A panic hook records crashes that take
+the window with them. The terminal UI logs to `hardviz-tui.log` beside it
+(with its own `.1`), never to the screen.
 
 Most `N/A`s are not bugs: they are the truth about your hardware. When a
 sensor cannot be read, the card says so and hovering it explains why — and
@@ -14,6 +15,8 @@ of [data-sources.md](data-sources.md) cover what each sensor needs.
 
 | Symptom | Cause / fix |
 |---|---|
+| "HardViz is already running" instead of a dashboard | One window at a time: a second launch would race the first on config saves. Use the existing window, or close it first. The terminal UI can run alongside the window. |
+| Load average shows `N/A` (Windows), or swap shows `N/A` | Expected: Windows reports no load average, and swap is only shown when it is configured. See [data-sources.md](data-sources.md#the-metric-catalogue). |
 | CPU temp shows `N/A` with "cannot reach http://127.0.0.1:8085/data.json" | LHM is not running or its Remote Web Server is off. See [CPU temperature on Windows](data-sources.md#cpu-temperature-on-windows). |
 | `N/A` with "MSAcpi_ThermalZoneTemperature returned 0 zone(s)" | ACPI fallback found no thermal zones — normal on modern boards. Use LHM. |
 | `N/A` with "no CPU sensor among N hwmon reading(s)" (Linux) | CPU driver not loaded. `sudo modprobe k10temp` / `coretemp`, or run `sensors-detect`. In WSL this is expected: there are no hardware sensors. |

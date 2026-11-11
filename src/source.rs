@@ -230,20 +230,31 @@ impl SourceRegistry {
             .find_map(|e| e.readings.get(id))
     }
 
-    /// Push the resolved value of every catalogue metric into the store.
+    /// Push the resolved value of every catalogue metric into the store, then
+    /// integrate the derived session totals over `dt_secs` (the real time
+    /// since the previous sample).
     ///
     /// A metric with no live provider is pushed as `None`, which lets the store
     /// mark it stale so the UI shows "N/A" rather than a frozen or zero reading.
-    pub fn publish(&self, store: &mut MetricStore, catalogue: &[MetricId]) {
+    /// Derived metrics are skipped: no source provides them, and the store
+    /// owns their values.
+    pub fn publish(&self, store: &mut MetricStore, catalogue: &[MetricId], dt_secs: f64) {
         for &id in catalogue {
+            if crate::metrics::is_derived(id) {
+                continue;
+            }
             store.push(id, self.resolve(id));
         }
+        store.integrate(dt_secs);
     }
 
     /// Explain a metric's availability. Returned to widgets so an unavailable
     /// reading renders an actionable message instead of a misleading zero.
     #[must_use]
     pub fn diagnose(&self, id: MetricId) -> MetricDiagnosis {
+        if crate::metrics::is_derived(id) {
+            return MetricDiagnosis { provider: Some("hardviz"), candidates: Vec::new() };
+        }
         let mut provider = None;
         let mut candidates = Vec::new();
 
@@ -285,7 +296,11 @@ impl MetricDiagnosis {
     #[must_use]
     pub fn explain(&self) -> String {
         if self.candidates.is_empty() {
-            return "no registered source provides this metric".into();
+            return if self.provider.is_some() {
+                "computed by HardViz from the sampled rates (session total)".into()
+            } else {
+                "no registered source provides this metric".into()
+            };
         }
         self.candidates
             .iter()
@@ -301,7 +316,7 @@ impl MetricDiagnosis {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metrics::metric::{CPU_TEMP, CPU_USAGE};
+    use crate::metrics::metric::{CPU_TEMP, CPU_USAGE, NET_DOWN};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -313,7 +328,7 @@ mod tests {
         polls: Arc<AtomicUsize>,
     }
 
-    const PROVIDES: &[MetricId] = &[CPU_TEMP, CPU_USAGE];
+    const PROVIDES: &[MetricId] = &[CPU_TEMP, CPU_USAGE, NET_DOWN];
 
     impl Fake {
         fn new(id: &'static str, online: bool, values: &[(MetricId, f64)]) -> (Self, Arc<AtomicUsize>) {
@@ -419,13 +434,45 @@ mod tests {
         let mut store = MetricStore::new();
         for _ in 0..3 {
             reg.poll_sources();
-            reg.publish(&mut store, &[CPU_TEMP, CPU_USAGE]);
+            reg.publish(&mut store, &[CPU_TEMP, CPU_USAGE], 1.0);
         }
         assert_eq!(store.current(CPU_USAGE), Some(5.0));
         assert_eq!(store.current(CPU_TEMP), None);
         let diag = reg.diagnose(CPU_TEMP);
         assert!(!diag.is_available());
         assert_eq!(diag.explain(), "a: online but no reading");
+    }
+
+    #[test]
+    fn derived_totals_are_integrated_not_resolved_or_staled() {
+        use crate::metrics::metric::NET_DOWN_TOTAL;
+        let (a, _) = Fake::new("a", true, &[(NET_DOWN, 10.0)]);
+        let mut reg = registry(vec![a]);
+        let mut store = MetricStore::new();
+        for _ in 0..3 {
+            reg.poll_sources();
+            reg.publish(&mut store, &[NET_DOWN, NET_DOWN_TOTAL], 1.0);
+        }
+        assert_eq!(store.current(NET_DOWN_TOTAL), Some(30.0));
+        let diag = reg.diagnose(NET_DOWN_TOTAL);
+        assert_eq!(diag.provider, Some("hardviz"));
+        assert!(diag.explain().contains("session total"));
+
+        // The rate source goes offline: the rate goes stale, but the total
+        // keeps its value (the brief-miss hold may add a little first).
+        reg.set_enabled("a", false);
+        for _ in 0..5 {
+            reg.poll_sources();
+            reg.publish(&mut store, &[NET_DOWN, NET_DOWN_TOTAL], 1.0);
+        }
+        assert_eq!(store.current(NET_DOWN), None);
+        let held = store.current(NET_DOWN_TOTAL);
+        assert!(held.is_some_and(|v| v >= 30.0), "{held:?}");
+        for _ in 0..2 {
+            reg.poll_sources();
+            reg.publish(&mut store, &[NET_DOWN, NET_DOWN_TOTAL], 1.0);
+        }
+        assert_eq!(store.current(NET_DOWN_TOTAL), held, "a stale rate adds nothing more");
     }
 
     #[test]

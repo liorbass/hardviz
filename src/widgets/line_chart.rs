@@ -110,6 +110,7 @@ impl Widget for LineChartWidget {
             danger_color: theme.danger,
             window: ctx.chart_window(),
             window_label: &window_label,
+            sample_ms: ctx.sample_interval_ms,
             format,
         };
         let rect = draw_chart(ui, theme, &spec);

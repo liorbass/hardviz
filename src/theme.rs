@@ -67,6 +67,7 @@ impl Theme {
             MetricKind::Storage => self.warning,
             MetricKind::Network => self.accent,
             MetricKind::Cooling => self.success,
+            MetricKind::System => self.text_secondary,
         }
     }
 

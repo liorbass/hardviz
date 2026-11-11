@@ -37,6 +37,8 @@ pub struct ChartSpec<'a> {
     pub window: usize,
     /// Human-readable span of `window`, shown at the right of the legend row.
     pub window_label: &'a str,
+    /// Time between two samples, for the hover tooltip's "-2:35" offsets.
+    pub sample_ms: u64,
     /// Formats axis and legend values; `None` prints `{value}{y_unit}`.
     pub format: Option<fn(f64) -> String>,
 }
@@ -107,13 +109,25 @@ pub fn bucket_means(points: &[f64], end: u64, k: usize) -> Vec<f64> {
     out
 }
 
+/// How many samples back from the newest a pointer at `x` sits, snapped to
+/// the sample grid: `window` samples span the plot, the newest on the right
+/// edge. Clamped to the window, so hovering past either edge reads the edge.
+#[must_use]
+pub fn hover_offset(plot: Rect, window: usize, x: f32) -> usize {
+    let window = window.max(2);
+    let step = plot.width() / count_f32(window - 1);
+    let back = ((plot.max.x - x) / step.max(1e-6)).round().max(0.0);
+    floor_usize(back.min(count_f32(window - 1)))
+}
+
 /// Render a multi-series time chart with gridlines, axis labels and a legend.
 ///
 /// Takes the full available width and `spec.height`. Returns the rect used
-/// so callers can attach tooltips.
+/// so callers can attach tooltips. Hovering the plot shows a crosshair with
+/// each series' value at that sample.
 pub fn draw_chart(ui: &mut Ui, theme: &Theme, spec: &ChartSpec) -> Rect {
     let width = ui.available_width().max(160.0);
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, spec.height), Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, spec.height), Sense::hover());
     let painter = ui.painter_at(rect);
 
     let span = (spec.y_max - spec.y_min).max(1e-6);
@@ -195,6 +209,33 @@ pub fn draw_chart(ui: &mut Ui, theme: &Theme, spec: &ChartSpec) -> Rect {
         }
     }
 
+    // Hover crosshair: each series' value at the sample under the pointer,
+    // read from the raw samples (not the drawing buckets) so the tooltip is
+    // exact. Series of different lengths share the offset from "now".
+    if let Some(pos) = resp.hover_pos().filter(|p| plot.contains(*p)) {
+        let window = spec.window.max(2);
+        let offset = hover_offset(plot, window, pos.x);
+        let x = plot.max.x - count_f32(offset) * (plot.width() / count_f32(window - 1));
+        painter.line_segment(
+            [Pos2::new(x, plot.min.y), Pos2::new(x, plot.max.y)],
+            egui::Stroke::new(1.0_f32, with_alpha(theme.text_muted, 140)),
+        );
+        let ago = u64::try_from(offset).unwrap_or(u64::MAX).saturating_mul(spec.sample_ms);
+        let mut lines = vec![if offset == 0 { "now".into() } else { format!("-{}", crate::widgets::span_label(ago)) }];
+        for s in spec.series {
+            let visible = &s.points[s.points.len().saturating_sub(window)..];
+            let v = visible.len().checked_sub(offset + 1).and_then(|i| visible.get(i)).filter(|v| !v.is_nan());
+            if let Some(&v) = v {
+                painter.add(egui::Shape::circle_filled(Pos2::new(x, y_at(v)), 3.0, s.color));
+            }
+            lines.push(match v {
+                Some(v) => format!("{} {}", s.label, spec.fmt(*v)),
+                None => format!("{} N/A", s.label),
+            });
+        }
+        resp.on_hover_text(lines.join("\n"));
+    }
+
     // Legend
     let legend_y = rect.max.y - 12.0;
     let mut x = plot.min.x;
@@ -261,6 +302,18 @@ mod tests {
         assert!(gap[0].is_nan() && gap[1] == 5.0 && gap.len() == 2);
         assert!(bucket_means(&[], 0, 4).is_empty());
         assert_eq!(bucket_means(&[1.0, 2.0], 2, 1), [1.0, 2.0]);
+    }
+
+    #[test]
+    fn hover_snaps_to_the_sample_grid_and_clamps_at_the_edges() {
+        // 11 samples span 100 px: one every 10 px, newest at x = 100.
+        assert_eq!(hover_offset(plot(), 11, 100.0), 0);
+        assert_eq!(hover_offset(plot(), 11, 90.0), 1);
+        assert_eq!(hover_offset(plot(), 11, 0.0), 10);
+        assert_eq!(hover_offset(plot(), 11, 96.0), 0, "snaps to the nearest");
+        assert_eq!(hover_offset(plot(), 11, 94.0), 1);
+        assert_eq!(hover_offset(plot(), 11, 200.0), 0, "past the right edge");
+        assert_eq!(hover_offset(plot(), 11, -50.0), 10, "past the left edge");
     }
 
     #[test]

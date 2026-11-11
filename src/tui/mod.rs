@@ -17,10 +17,13 @@ use crate::theme::{Theme, ThemeName};
 use crate::{error, info, log, sources};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
-/// How often the screen is redrawn without input. Readings arrive at the
-/// refresh interval; this only bounds how stale the clock-driven parts get.
+/// How long to wait for input before checking for a new sample again. The
+/// screen redraws when a sample is published (or a key is pressed), not on
+/// this tick; it only bounds how late a redraw can be after a publish.
 const FRAME: Duration = Duration::from_millis(250);
 /// Refresh interval limits and step, as in Settings.
 const REFRESH_MIN_MS: u64 = 250;
@@ -37,6 +40,9 @@ pub struct Ui {
     pub chart_span_secs: u64,
     /// A newer release, once the update check has found one.
     pub update: Option<crate::update::Release>,
+    /// Outcome of the last history export (`e`), shown in the footer until
+    /// the next key press.
+    pub export_note: Option<String>,
 }
 
 impl Ui {
@@ -49,6 +55,7 @@ impl Ui {
             refresh_ms: refresh_ms.clamp(REFRESH_MIN_MS, REFRESH_MAX_MS),
             chart_span_secs: 300,
             update: None,
+            export_note: None,
         }
     }
 
@@ -118,24 +125,55 @@ fn event_loop(
     update: Option<&crate::update::UpdateCheck>,
 ) -> io::Result<()> {
     let state = poller.state();
+    // Redraw when a sample lands, like the window does: a fixed redraw tick
+    // runs out of phase with the poller and redraws several times per sample.
+    let dirty = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&dirty);
+    poller.on_publish(move || flag.store(true, Ordering::Relaxed));
+    let mut force = true;
     loop {
         poller.set_interval(ui.refresh_ms);
         state.keep_history_for(ui.chart_span_secs, ui.refresh_ms);
         if ui.update.is_none() {
             ui.update = update.and_then(crate::update::UpdateCheck::available);
         }
-        terminal.draw(|f| {
-            if let Some(view) = state.lock() {
-                draw(f, &view.store, &view.processes, ui);
-            }
-        })?;
-        if event::poll(FRAME)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press && ui.handle_key(key.code, key.modifiers) {
-                    return Ok(());
+        // Swap before drawing: a publish during the draw sets the flag again
+        // and is not lost.
+        if force || dirty.swap(false, Ordering::Relaxed) {
+            terminal.draw(|f| {
+                if let Some(view) = state.lock() {
+                    draw(f, &view.store, &view.processes, ui);
                 }
+            })?;
+            force = false;
+        }
+        if event::poll(FRAME)? {
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    ui.export_note = None;
+                    if key.code == KeyCode::Char('e') && !key.modifiers.contains(KeyModifiers::CONTROL) {
+                        ui.export_note = Some(export_history(&state, ui.refresh_ms));
+                    } else if ui.handle_key(key.code, key.modifiers) {
+                        return Ok(());
+                    }
+                    force = true;
+                }
+                Event::Resize(..) => force = true,
+                _ => {}
             }
         }
+    }
+}
+
+/// Write the retained history to a CSV next to the config; the outcome, for
+/// the footer.
+fn export_history(state: &crate::poller::SharedState, refresh_ms: u64) -> String {
+    match state.lock() {
+        Some(view) => match crate::export::write_export(&view.store, refresh_ms) {
+            Ok(path) => format!("exported to {}", path.display()),
+            Err(e) => e,
+        },
+        None => "export failed: the sampling thread is not running".into(),
     }
 }
 
@@ -214,6 +252,15 @@ mod tests {
         assert!(render(120, 40, &ui).contains("-5 min"));
         ui.chart_span_secs = 3600;
         assert!(render(120, 40, &ui).contains("-1 h"));
+    }
+
+    #[test]
+    fn the_footer_shows_the_export_note_until_the_next_key() {
+        let mut ui = Ui::new(ThemeName::MidnightDark, 1000);
+        assert!(render(120, 40, &ui).contains("export CSV"), "the key is documented");
+        ui.export_note = Some("exported to /tmp/hardviz-export.csv".into());
+        let screen = render(120, 40, &ui);
+        assert!(screen.contains("exported to /tmp/hardviz-export.csv"));
     }
 
     #[test]

@@ -91,6 +91,10 @@ Metrics), with the widget list as wrapping chips underneath.
 - **Updates** — the running version, whether it is the latest, a link to a
   newer release when there is one, and the *Check for updates at start*
   checkbox. See [Updates](#updates).
+- **Data** — **Export history (CSV)** writes every metric's retained history
+  to a timestamped file next to the config (see
+  [configuration.md](configuration.md#files)); the path is shown under the
+  button. Local only — nothing is uploaded.
 - Header — the running version and the resolved config path (see
   [configuration.md](configuration.md)).
 
@@ -153,6 +157,11 @@ samples than the chart has pixels, each point on the line is the average of
 the samples behind it, so a short spike looks smaller over an hour than over a
 minute. Gauge sparklines keep their 300 samples and sensor tiles their minute.
 
+**Hover a chart** to read it: a crosshair snaps to the sample under the
+pointer and a tooltip lists every series' value there, with how long ago it
+was (`-2 min`, or `now` at the right edge). The values are the raw samples,
+not the averaged points the line is drawn from.
+
 Gauges and bars span the metric's scale: 0–100 % for usage, a fixed range for
 temperatures, and the busiest recent value (rounded up) for watts, clocks and
 RPM. Layouts saved before the sensors were split get the six sensor cards in
@@ -180,10 +189,17 @@ The **Add widget** panel offers one button per registered type:
 | `chart.network` | Network | Large | `net.down`, `net.up` |
 | `chart.disk` | Disk | Large | `disk.read`, `disk.write` |
 | `panel.processes` | Top Processes | Large | — (process list, sampled only while shown) |
+| `sensor.load` | Load Average | Small | `cpu.load` |
+| `sensor.swap` | Swap | Small | `swap.usage` |
+| `sensor.uptime` | Uptime | Small | `system.uptime` |
+| `sensor.net_down_total` / `sensor.net_up_total` | Downloaded / Uploaded (session) | Small | `net.down.total` / `net.up.total` |
+| `sensor.disk_read_total` / `sensor.disk_write_total` | Disk Read / Written (session) | Small | `disk.read.total` / `disk.write.total` |
+| `panel.cores` | Per-Core CPU | Wide | — (per-core list, sampled only while shown) |
 
 New widget types are not added to an existing saved layout automatically; add
-them with **Add widget**. A fresh install (or a deleted config) includes all
-of them.
+them with **Add widget**. A fresh install (or a deleted config) starts with
+the gauges, memory bars, sensor tiles, charts and process list; the load,
+swap, uptime, session-total and per-core cards are opt-in on every layout.
 
 Every chart is one `LineChartWidget` and every single-metric card one
 `MetricWidget`, each configured by one entry in `default_registry()`
@@ -210,6 +226,7 @@ cargo run --release --bin hardviz-tui    # from source
 | `t` | next theme |
 | `w` | chart time span: 1, 5, 15, 30 min, 1 h |
 | `+` / `-` | refresh interval, 250–5000 ms |
+| `e` | export history to a CSV next to the config; the path shows in the footer until the next key |
 
 - **Layout** — four usage panels (two by two below 100 columns), the sensors
   the machine reports, then temperature, network and disk charts and the

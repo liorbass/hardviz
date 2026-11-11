@@ -1,11 +1,13 @@
 name: CI
 
-# Runs only when a version is tagged (`git tag v0.2.0 && git push origin v0.2.0`)
-# or when started by hand (Actions tab -> CI -> Run workflow). Ordinary
-# commits, docs and comment edits trigger nothing.
+# Runs when a version is tagged (`git tag v0.2.0 && git push origin v0.2.0`),
+# on pull requests (checks only: no packaging or release), or when started by
+# hand (Actions tab -> CI -> Run workflow). Ordinary commits to main trigger
+# nothing.
 on:
   push:
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 
 # A newer run for the same ref cancels the one in progress.
@@ -62,11 +64,23 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked -- --test-threads=1
 
+  audit:
+    # Known vulnerabilities in the locked dependencies (cargo-audit against
+    # the RustSec advisory database).
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   package:
     # Release builds, uploaded as workflow artifacts (Actions run page ->
-    # Artifacts).
+    # Artifacts). Pull requests run the checks only, not packaging.
     name: Package (${{ matrix.name }})
     needs: [fmt, check]
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:

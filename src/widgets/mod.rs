@@ -7,6 +7,7 @@
 
 pub mod bar;
 pub mod chart;
+pub mod cores;
 pub mod gauge;
 pub mod glow;
 pub mod line_chart;
@@ -17,8 +18,9 @@ pub mod tile;
 
 use crate::config::Visual;
 use crate::metrics::metric::{
-    CPU_CLOCK, CPU_POWER, CPU_TEMP, CPU_USAGE, DISK_READ, DISK_WRITE, FAN_SPEED, GPU_CLOCK, GPU_POWER, GPU_TEMP,
-    GPU_USAGE, NET_DOWN, NET_UP, RAM_TOTAL, RAM_USAGE, RAM_USED, STORAGE_TEMP, VRAM_TOTAL, VRAM_USAGE, VRAM_USED,
+    CPU_CLOCK, CPU_LOAD, CPU_POWER, CPU_TEMP, CPU_USAGE, DISK_READ, DISK_READ_TOTAL, DISK_WRITE, DISK_WRITE_TOTAL,
+    FAN_SPEED, GPU_CLOCK, GPU_POWER, GPU_TEMP, GPU_USAGE, NET_DOWN, NET_DOWN_TOTAL, NET_UP, NET_UP_TOTAL, RAM_TOTAL,
+    RAM_USAGE, RAM_USED, STORAGE_TEMP, SWAP_USAGE, UPTIME, VRAM_TOTAL, VRAM_USAGE, VRAM_USED,
 };
 use crate::metrics::MetricKind;
 use crate::num::total_f64;
@@ -96,6 +98,58 @@ pub fn default_registry() -> WidgetRegistry {
         default: true,
         build,
     }));
+    // Readings added after the first release: available from Add widget, but
+    // not placed into existing or fresh layouts unasked.
+    factories.extend([
+        WidgetFactory {
+            type_id: "sensor.load",
+            display_name: "Load Average",
+            default: false,
+            build: || Box::new(MetricWidget::new(CPU_LOAD, Visual::Tile)),
+        },
+        WidgetFactory {
+            type_id: "sensor.swap",
+            display_name: "Swap",
+            default: false,
+            build: || Box::new(MetricWidget::new(SWAP_USAGE, Visual::Tile)),
+        },
+        WidgetFactory {
+            type_id: "sensor.uptime",
+            display_name: "Uptime",
+            default: false,
+            build: || Box::new(MetricWidget::new(UPTIME, Visual::Tile)),
+        },
+        WidgetFactory {
+            type_id: "sensor.net_down_total",
+            display_name: "Downloaded (session)",
+            default: false,
+            build: || Box::new(MetricWidget::new(NET_DOWN_TOTAL, Visual::Tile)),
+        },
+        WidgetFactory {
+            type_id: "sensor.net_up_total",
+            display_name: "Uploaded (session)",
+            default: false,
+            build: || Box::new(MetricWidget::new(NET_UP_TOTAL, Visual::Tile)),
+        },
+        WidgetFactory {
+            type_id: "sensor.disk_read_total",
+            display_name: "Disk Read (session)",
+            default: false,
+            build: || Box::new(MetricWidget::new(DISK_READ_TOTAL, Visual::Tile)),
+        },
+        WidgetFactory {
+            type_id: "sensor.disk_write_total",
+            display_name: "Disk Written (session)",
+            default: false,
+            build: || Box::new(MetricWidget::new(DISK_WRITE_TOTAL, Visual::Tile)),
+        },
+        WidgetFactory {
+            type_id: "panel.cores",
+            display_name: "Per-Core CPU",
+            default: false,
+            build: || Box::new(cores::PerCoreWidget::new()),
+        },
+    ]);
     factories.extend([
         WidgetFactory {
             type_id: "chart.usage",

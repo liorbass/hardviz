@@ -2,6 +2,11 @@
 //!
 //! Works on Windows and Linux with NVIDIA drivers installed; no extra setup.
 //! Reports GPU utilisation, VRAM capacity/usage, temperature, power and clock.
+//!
+//! With several GPUs, one reading still describes "the GPU": utilisation,
+//! temperature and clock report the busiest device, power and VRAM the sum
+//! across devices. A query one board does not support is left unset, never
+//! reported as zero.
 
 use crate::metrics::{metric, MetricId, BYTES_PER_MB};
 use crate::num::total_f64;
@@ -80,31 +85,65 @@ impl MetricSource for NvmlSource {
 
     /// Each query is independent: one the board does not support (power on
     /// some laptops, for example) is simply left unset rather than reported
-    /// as zero.
+    /// as zero. Across devices, maxima describe the busiest GPU and sums the
+    /// whole machine's VRAM and draw.
     fn poll(&mut self, out: &mut Readings) {
         let Some(nvml) = self.library() else { return };
-        let device = match nvml.device_by_index(0) {
-            Ok(d) => d,
+        let count = match nvml.device_count() {
+            Ok(n) if n > 0 => n,
+            Ok(_) => {
+                self.status = SourceStatus::Unavailable { reason: "no NVIDIA device enumerable".into() };
+                return;
+            }
             Err(e) => {
                 self.status = SourceStatus::Unavailable { reason: format!("no NVIDIA device enumerable ({e})") };
                 return;
             }
         };
 
-        out.set(metric::GPU_USAGE, device.utilization_rates().ok().map(|u| f64::from(u.gpu)));
-        if let Ok(info) = device.memory_info() {
-            out.set(metric::VRAM_USED, total_f64(info.used) / BYTES_PER_MB);
-            out.set(metric::VRAM_TOTAL, total_f64(info.total) / BYTES_PER_MB);
-            if info.total > 0 {
-                out.set(metric::VRAM_USAGE, total_f64(info.used) / total_f64(info.total) * 100.0);
+        let (mut usage, mut temp, mut clock): (Option<f64>, Option<f64>, Option<f64>) = (None, None, None);
+        let (mut vram_used, mut vram_total, mut power) = (0.0, 0.0, 0.0);
+        let (mut any, mut have_mem, mut have_power) = (false, false, false);
+        for i in 0..count {
+            let Ok(device) = nvml.device_by_index(i) else { continue };
+            any = true;
+            if let Ok(u) = device.utilization_rates() {
+                usage = Some(usage.unwrap_or(0.0).max(f64::from(u.gpu)));
+            }
+            if let Ok(info) = device.memory_info() {
+                have_mem = true;
+                vram_used += total_f64(info.used) / BYTES_PER_MB;
+                vram_total += total_f64(info.total) / BYTES_PER_MB;
+            }
+            // 0 is not a plausible GPU temperature; treat it as "no reading".
+            if let Some(t) = device.temperature(TemperatureSensor::Gpu).ok().filter(|t| *t > 0) {
+                temp = Some(temp.unwrap_or(0.0).max(f64::from(t)));
+            }
+            // NVML reports milliwatts.
+            if let Ok(mw) = device.power_usage() {
+                have_power = true;
+                power += f64::from(mw) / 1000.0;
+            }
+            if let Ok(c) = device.clock_info(Clock::Graphics) {
+                clock = Some(clock.unwrap_or(0.0).max(f64::from(c)));
             }
         }
-        // 0 is not a plausible GPU temperature; treat it as "no reading".
-        let temp = device.temperature(TemperatureSensor::Gpu).ok().filter(|t| *t > 0);
-        out.set(metric::GPU_TEMP, temp.map(f64::from));
-        // NVML reports milliwatts.
-        out.set(metric::GPU_POWER, device.power_usage().ok().map(|mw| f64::from(mw) / 1000.0));
-        out.set(metric::GPU_CLOCK, device.clock_info(Clock::Graphics).ok().map(f64::from));
+        if !any {
+            self.status = SourceStatus::Unavailable { reason: "no NVIDIA device responded".into() };
+            return;
+        }
+
+        out.set(metric::GPU_USAGE, usage);
+        if have_mem {
+            out.set(metric::VRAM_USED, vram_used);
+            out.set(metric::VRAM_TOTAL, vram_total);
+            if vram_total > 0.0 {
+                out.set(metric::VRAM_USAGE, vram_used / vram_total * 100.0);
+            }
+        }
+        out.set(metric::GPU_TEMP, temp);
+        out.set(metric::GPU_POWER, have_power.then_some(power));
+        out.set(metric::GPU_CLOCK, clock);
 
         self.status = SourceStatus::Online;
     }

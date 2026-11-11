@@ -16,9 +16,12 @@ The path is resolved by the
 printed at startup in the log (`config path: …`) and shown in the Settings
 panel footer — check there rather than guessing.
 
-The file is rewritten every 30 polls and again on exit, so a change you make in
-Settings survives a crash in most cases but not all; quit normally if you have
-just rearranged the dashboard.
+The file is checked every 30 polls and on exit, and rewritten only when
+something changed — an idle session does not touch the disk. Writes are
+atomic (a temp file renamed over the live one), so a crash mid-save leaves
+the previous config intact. A change you make in Settings survives a crash
+in most cases but not all; quit normally if you have just rearranged the
+dashboard.
 
 ## The file
 
@@ -65,6 +68,20 @@ Safe, with two behaviours worth knowing:
 
 Delete `config.json` for a factory reset (all default widgets, Midnight theme,
 windowed).
+
+## Files
+
+Everything HardViz writes lives in that one directory:
+
+| File | What it is |
+|---|---|
+| `config.json` | the config above |
+| `config.json.bak` | a config that could not be parsed, kept for inspection |
+| `hardviz.log` | this run's log (window) |
+| `hardviz.log.1` | the previous run's log, kept on each start |
+| `hardviz-tui.log` / `hardviz-tui.log.1` | the same, for the terminal UI |
+| `hardviz.lock` | the single-instance lock; an empty file whose contents never matter — the OS lock on it does, and it is released when the process exits |
+| `hardviz-export-<timestamp>.csv` | history exports (Settings → Data, or `e` in the TUI); safe to delete |
 
 ## The terminal UI
 

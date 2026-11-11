@@ -16,11 +16,17 @@ const PROVIDES: &[MetricId] = &[
     metric::RAM_USAGE,
     metric::RAM_USED,
     metric::RAM_TOTAL,
+    metric::SWAP_USAGE,
+    metric::SWAP_USED,
     // Registered after LHM, so on Windows LHM's live average wins; sysinfo's
     // Windows value is the nominal clock and serves only as a fallback.
     metric::CPU_CLOCK,
+    // Only written where the OS reports it (not Windows); declaring it
+    // everywhere keeps the source's contract static.
+    metric::CPU_LOAD,
     metric::NET_DOWN,
     metric::NET_UP,
+    metric::UPTIME,
 ];
 
 /// Below this a "clock" is a misread, not a reading: sysinfo derives Apple
@@ -118,6 +124,20 @@ impl MetricSource for SysinfoSource {
         if total > 0 {
             out.set(metric::RAM_USAGE, total_f64(used) / total_f64(total) * 100.0);
         }
+
+        // No swap configured is "not available", not a zero reading.
+        let (swap_total, swap_used) = (self.system.total_swap(), self.system.used_swap());
+        if swap_total > 0 {
+            out.set(metric::SWAP_USED, total_f64(swap_used) / BYTES_PER_MB);
+            out.set(metric::SWAP_USAGE, total_f64(swap_used) / total_f64(swap_total) * 100.0);
+        }
+
+        // sysinfo returns zeros for the load average on Windows (the OS does
+        // not report one); leave the metric unset there rather than fake it.
+        #[cfg(not(windows))]
+        out.set(metric::CPU_LOAD, System::load_average().one);
+
+        out.set(metric::UPTIME, total_f64(System::uptime()));
 
         if let Some((down, up)) = self.poll_network() {
             out.set(metric::NET_DOWN, down);

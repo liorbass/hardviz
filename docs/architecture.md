@@ -53,6 +53,7 @@ Shared state lives in `poller.rs` and is reached only through `Poller` methods:
 | store | `MetricStore` | poller (`publish`), UI (`advance`) | widgets, via `SharedState::lock` |
 | diagnoses | `Diagnoses` (`HashMap<MetricId, MetricDiagnosis>`) | poller | widgets, Settings |
 | processes | `Vec<ProcRow>` (top processes) | poller, only while wanted | Top Processes widget |
+| cores | `Vec<f32>` (per-core CPU usage) | poller, only while wanted | Per-Core CPU widget |
 
 ```mermaid
 sequenceDiagram
@@ -72,7 +73,7 @@ sequenceDiagram
     end
     loop every frame
         UI->>St: SharedState::advance (easing)
-        UI->>St: SharedState::lock: store, then diagnoses, then processes
+        UI->>St: SharedState::lock: store, diagnoses, processes, cores (in that order)
         Note over UI: every card draws from that one view
     end
 ```
@@ -89,7 +90,7 @@ repaints for occluded or unfocused windows (30 one-second polls take over
 - The poller takes registry → store, and registry → diagnoses, never store and
   diagnoses together. Sources do their I/O holding **only** the registry lock,
   so a slow source never blocks rendering.
-- The UI reads store, diagnoses and processes only through
+- The UI reads store, diagnoses, processes and cores only through
   `SharedState::lock`, which takes them in that fixed order, once per frame
   for the whole dashboard.
 - The registry is touched by the UI only through `Poller::source_infos` and
@@ -105,7 +106,8 @@ So no two threads can wait on each other. Consequences:
    frame to publish, and its schedule is unaffected.
 3. **Process sampling is opt-in.** Enumerating every process is the costliest
    sample, so the poller does it (every 2 s) only while a visible widget's
-   `wants_processes()` is true.
+   `wants_processes()` is true. Per-core sampling is opt-in the same way
+   (`wants_cores()`), but cheap enough to run at the metric cadence.
 
 ### Startup and the poller loop
 
@@ -119,11 +121,11 @@ The thread sleeps on a channel until the next sample or process refresh, so
 `set_interval` and dropping the `Poller` take effect at once. Samples run on a
 fixed-rate schedule (each is due one interval after the previous one was *due*),
 so time spent sampling does not stretch the period. After each publish the
-poller calls the `on_publish` callback; the window uses it to repaint, so a
-sample is drawn as it lands rather than on a UI timer that drifts against the
-poller. `poll_count()` is
-a monotonic counter; the app saves the config and the poller logs a health
-line every 30 polls.
+poller calls the `on_publish` callback; both front ends use it to repaint, so
+a sample is drawn as it lands rather than on a UI timer that drifts against
+the poller. `poll_count()` is
+a monotonic counter; the app checks the config for changes and the poller logs
+a health line every 30 polls.
 
 ## Source resolution
 
@@ -149,6 +151,12 @@ the fallback. In debug builds the registry asserts that a source only writes
 ids it lists in `provides()`, so an undeclared metric fails loudly. These rules
 are unit tested in `source.rs` and end to end in `tests/pipeline.rs`.
 
+**Derived metrics** (`metrics::RATE_TOTALS`, the session totals) are the one
+exception to "a source provides every metric": no source claims them, the
+registry skips them when publishing, and the store integrates them from their
+rate metric instead (see below). Their diagnosis names `hardviz` as the
+provider.
+
 ## MetricStore semantics
 
 One series per catalogue metric:
@@ -156,6 +164,7 @@ One series per catalogue metric:
 | Method | Called by | Behaviour |
 |---|---|---|
 | `push(id, Option<f64>)` | poller, once per metric per poll | `Some(v)` appends to history. `None` counts a miss; after `STALE_AFTER = 3` consecutive misses, `current` becomes `None` and `NaN` is appended |
+| `integrate(dt_secs)` | poller, once per poll, inside `publish` | accumulates each rate in `RATE_TOTALS` into its session total over the real elapsed time; a stale rate adds nothing, and the total itself never goes stale |
 | `advance(dt, rate)` | UI, once per frame | exponential ease toward `current`, frame-rate independent |
 | `smoothed(id)` → `ctx.value()` | widgets | eased value, `None` when unavailable |
 | `current(id)` → `ctx.raw()` | widgets | latest raw reading |
@@ -226,21 +235,28 @@ only advances once per sample.
 
 ## Configuration
 
-`AppConfig` (`config.rs`, serde JSON) loads once at startup and saves every 30
-polls and on exit. Widgets are stored as instances (`uid`, `type_id`,
-`visible`, optional `span` / `height`). On load, instances whose `type_id` is
-not registered are dropped, so removing a widget type cannot corrupt a saved
-layout; `config.rs` gets the known and default type ids from the widget
-registry (`WidgetTypes`) rather than importing it. A missing file means
-defaults; a file that cannot be parsed is renamed to `config.json.bak` and
-logged before defaults are used, so it is never silently overwritten. Every
-field added since the first release has a serde default, so old files load.
+`AppConfig` (`config.rs`, serde JSON) loads once at startup; every 30 polls
+and on exit it is serialized and compared with the last save, and written
+only when it changed, atomically (temp file + rename). Widgets are stored as
+instances (`uid`, `type_id`, `visible`, optional `span` / `height`). On load,
+instances whose `type_id` is not registered are dropped, so removing a widget
+type cannot corrupt a saved layout; `config.rs` gets the known and default
+type ids from the widget registry (`WidgetTypes`) rather than importing it. A
+missing file means defaults; a file that cannot be parsed is renamed to
+`config.json.bak` and logged before defaults are used, so it is never silently
+overwritten. Every field added since the first release has a serde default, so
+old files load.
+
+The window also holds a single-instance lock (`startup.rs`): an OS lock on
+`<config_dir>/hardviz.lock`, released by the OS when the process exits. A
+second window shows a notice instead of starting; the terminal UI is not
+guarded, since it never writes the config.
 
 ## Module map
 
 | Path | Responsibility |
 |---|---|
-| `main.rs` | logger, panic hook, config load, viewport, `run_native` |
+| `main.rs`, `startup.rs` | logger, panic hook, single-instance lock, config load, viewport, `run_native` |
 | `lib.rs` | the crate root; everything below is a library, tested in `tests/` |
 | `bin/hardviz-tui.rs`, `tui/` | the terminal front end: ratatui event loop and keys (`mod.rs`), a pure `draw` of store + processes (`view.rs`); same `Poller` and sources as the window, config read-only |
 | `app/mod.rs` | shell state, per-frame update, widget instances |
@@ -248,13 +264,15 @@ field added since the first release has a serde default, so old files load.
 | `app/layout.rs` | pure grid geometry: packing, fit to window, resize |
 | `app/window.rs` | view modes, viewport commands, window geometry |
 | `app/style.rs` | shared frames and buttons, egui visuals, fonts |
-| `poller.rs` | sampling thread, `SharedState`, process sampling on demand |
-| `metrics.rs` | catalogue (`metric::*`, `METRICS`), `Unit`, `Scale`, `MetricKind`, `MetricStore` |
+| `poller.rs` | sampling thread, `SharedState`, process and per-core sampling on demand |
+| `metrics/` | catalogue (`metric::*`, `METRICS`, `RATE_TOTALS`), `Unit`, `Scale`, `MetricKind`, `MetricStore` |
 | `source.rs` | `MetricSource`, `Readings`, `SourceRegistry`, resolution, diagnostics |
 | `widget.rs` | `Widget`, `WidgetCtx`, `WidgetRegistry` |
 | `widgets/mod.rs` | `default_registry()` (every widget type), card frame, N/A placeholder |
-| `widgets/*.rs` | `chart` (chart primitive, `time_segments`) and the configurable widgets |
+| `widgets/*.rs` | `chart` (chart primitive, `time_segments`, hover crosshair) and the configurable widgets |
 | `processes.rs` | per-process CPU / GPU / I/O / memory sampling and ranking |
+| `cores.rs` | per-core CPU sampling for the Per-Core CPU card |
+| `export.rs` | history export: pure CSV builder + the timestamped file next to the config |
 | `nvidia.rs` | loading NVML, shared by the NVML source and process sampling |
 | `config.rs` | persisted `AppConfig`, the app directory |
 | `update.rs` | the running version; the background release check started with the app |

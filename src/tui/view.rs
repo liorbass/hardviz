@@ -16,7 +16,7 @@
 //! ╰───────────────────────────────╯╰───────────────────────────────────╯
 //! ╭ Disk ─────────────────────────╮╭ Top processes ────────────────────╮
 //! ╰───────────────────────────────╯╰───────────────────────────────────╯
-//!  q quit  c/g/i/m sort  t theme  w chart span  +/- refresh
+//!  q quit  c/g/i/m sort  t theme  w chart span  +/- refresh  e export
 //! ```
 
 use super::Ui;
@@ -68,7 +68,7 @@ pub fn draw(f: &mut Frame, store: &MetricStore, processes: &[ProcRow], ui: &Ui) 
     let [title, body, footer] =
         Layout::vertical([Constraint::Length(1), Constraint::Fill(1), Constraint::Length(1)]).areas(area);
     draw_title(f, title, ui);
-    draw_footer(f, footer, t);
+    draw_footer(f, footer, ui);
 
     let wide = body.width >= WIDE;
     let gauges_h = match (wide, body.height >= TALL) {
@@ -127,7 +127,14 @@ fn draw_title(f: &mut Frame, area: Rect, ui: &Ui) {
     f.render_widget(Paragraph::new(right), area);
 }
 
-fn draw_footer(f: &mut Frame, area: Rect, t: &Theme) {
+fn draw_footer(f: &mut Frame, area: Rect, ui: &Ui) {
+    let t = &ui.theme;
+    // The export outcome replaces the key help until the next key press.
+    if let Some(note) = &ui.export_note {
+        let line = Line::from(Span::styled(format!(" {note}"), Style::new().fg(tc(t.accent))));
+        f.render_widget(Paragraph::new(line), area);
+        return;
+    }
     let key = |k: &'static str| Span::styled(k, Style::new().fg(tc(t.accent)).add_modifier(Modifier::BOLD));
     let what = |w: &'static str| Span::styled(w, Style::new().fg(tc(t.text_muted)));
     let line = Line::from(vec![
@@ -141,7 +148,9 @@ fn draw_footer(f: &mut Frame, area: Rect, t: &Theme) {
         key("w"),
         what(" chart span   "),
         key("+ -"),
-        what(" refresh"),
+        what(" refresh   "),
+        key("e"),
+        what(" export CSV"),
     ]);
     f.render_widget(Paragraph::new(line), area);
 }

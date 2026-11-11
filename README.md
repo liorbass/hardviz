@@ -49,12 +49,18 @@ Two promises worth making up front:
 - **Charts** — CPU/GPU usage, temperatures with an 80 °C threshold line,
   network down/up and disk read/write on auto-scaled axes, RAM/VRAM capacity
   bars — on a rolling window of 1 minute to 1 hour (five minutes unless you
-  change it: Settings, or right-click a chart).
+  change it: Settings, or right-click a chart). Hover any chart for the exact
+  values at that moment.
 - **Sensor tiles** — CPU/GPU power and clock, the hottest drive, the fastest
-  fan, each with a one-minute sparkline. Only sensors your machine actually
-  reports are shown.
+  fan, each with a one-minute sparkline; load average, swap, uptime and
+  session network/disk totals one **Add widget** click away. Only sensors your
+  machine actually reports are shown.
+- **Per-core CPU** — a bar per logical core, so one busy thread cannot hide
+  behind a low average (sampled only while the card is shown).
 - **Top processes** — grouped by executable, sortable by CPU, GPU, I/O or
   memory: click a column header.
+- **History export** — one click in Settings (or `e` in the terminal UI)
+  writes the retained history to a local CSV. Nothing is uploaded.
 - **View modes** — windowed, OS-fullscreen, and a compact overlay: a
   borderless 640×96 strip that stays on top (📌 toggles that), drags anywhere,
   remembers where you left it, and fades to your chosen opacity.

@@ -8,7 +8,7 @@ mod store;
 mod units;
 
 pub use store::{MetricStore, HISTORY_LEN, MAX_CAPACITY};
-pub use units::{format_rate, AxisFormat, Unit, BYTES_PER_MB};
+pub use units::{format_duration, format_rate, AxisFormat, Unit, BYTES_PER_MB};
 
 use std::fmt;
 
@@ -97,6 +97,20 @@ pub mod metric {
         unit: Unit::Megabytes,
         scale: Scale::Auto(1024.0),
     });
+    pub const SWAP_USAGE: MetricId = MetricId(&MetricDef {
+        key: "swap.usage",
+        label: "Swap",
+        kind: MetricKind::Ram,
+        unit: Unit::Percent,
+        scale: Scale::Fixed(0.0, 100.0),
+    });
+    pub const SWAP_USED: MetricId = MetricId(&MetricDef {
+        key: "swap.used",
+        label: "Swap used",
+        kind: MetricKind::Ram,
+        unit: Unit::Megabytes,
+        scale: Scale::Auto(1024.0),
+    });
     pub const GPU_USAGE: MetricId = MetricId(&MetricDef {
         key: "gpu.usage",
         label: "GPU",
@@ -145,6 +159,15 @@ pub mod metric {
         kind: MetricKind::Cpu,
         unit: Unit::Megahertz,
         scale: Scale::Fixed(0.0, 6000.0),
+    });
+    /// One-minute load average: runnable + waiting tasks, not a percentage.
+    /// Only reported where the OS provides it (Linux, macOS).
+    pub const CPU_LOAD: MetricId = MetricId(&MetricDef {
+        key: "cpu.load",
+        label: "Load (1 min)",
+        kind: MetricKind::Cpu,
+        unit: Unit::Number,
+        scale: Scale::Auto(1.0),
     });
     pub const GPU_POWER: MetricId = MetricId(&MetricDef {
         key: "gpu.power",
@@ -205,6 +228,61 @@ pub mod metric {
         unit: Unit::MegabytesPerSec,
         scale: Scale::Auto(1.0),
     });
+    /// Session totals: MB moved since this run started, integrated from the
+    /// rate readings by the store ([`RATE_TOTALS`]). No source provides them.
+    pub const NET_DOWN_TOTAL: MetricId = MetricId(&MetricDef {
+        key: "net.down.total",
+        label: "Down total",
+        kind: MetricKind::Network,
+        unit: Unit::Megabytes,
+        scale: Scale::Auto(1024.0),
+    });
+    pub const NET_UP_TOTAL: MetricId = MetricId(&MetricDef {
+        key: "net.up.total",
+        label: "Up total",
+        kind: MetricKind::Network,
+        unit: Unit::Megabytes,
+        scale: Scale::Auto(1024.0),
+    });
+    pub const DISK_READ_TOTAL: MetricId = MetricId(&MetricDef {
+        key: "disk.read.total",
+        label: "Read total",
+        kind: MetricKind::Storage,
+        unit: Unit::Megabytes,
+        scale: Scale::Auto(1024.0),
+    });
+    pub const DISK_WRITE_TOTAL: MetricId = MetricId(&MetricDef {
+        key: "disk.write.total",
+        label: "Write total",
+        kind: MetricKind::Storage,
+        unit: Unit::Megabytes,
+        scale: Scale::Auto(1024.0),
+    });
+    /// Time since boot, in seconds.
+    pub const UPTIME: MetricId = MetricId(&MetricDef {
+        key: "system.uptime",
+        label: "Uptime",
+        kind: MetricKind::System,
+        unit: Unit::Duration,
+        scale: Scale::Auto(3600.0),
+    });
+}
+
+/// Rate metrics and the session totals the store integrates them into, on
+/// every published sample. Derived metrics have no source: the registry
+/// neither resolves nor marks them stale.
+pub const RATE_TOTALS: [(MetricId, MetricId); 4] = [
+    (metric::NET_DOWN, metric::NET_DOWN_TOTAL),
+    (metric::NET_UP, metric::NET_UP_TOTAL),
+    (metric::DISK_READ, metric::DISK_READ_TOTAL),
+    (metric::DISK_WRITE, metric::DISK_WRITE_TOTAL),
+];
+
+/// Whether HardViz computes this metric itself rather than reading it from
+/// a source.
+#[must_use]
+pub fn is_derived(id: MetricId) -> bool {
+    RATE_TOTALS.iter().any(|&(_, total)| total == id)
 }
 
 /// Drives colouring. Widgets ask the theme for a colour by kind.
@@ -217,6 +295,8 @@ pub enum MetricKind {
     Storage,
     Network,
     Cooling,
+    /// Whole-system readings that belong to no one device (uptime).
+    System,
 }
 
 /// Static description of one metric.
@@ -290,6 +370,8 @@ pub const METRICS: &[MetricId] = &[
     metric::RAM_USAGE,
     metric::RAM_USED,
     metric::RAM_TOTAL,
+    metric::SWAP_USAGE,
+    metric::SWAP_USED,
     metric::GPU_USAGE,
     metric::GPU_TEMP,
     metric::VRAM_USAGE,
@@ -297,14 +379,20 @@ pub const METRICS: &[MetricId] = &[
     metric::VRAM_TOTAL,
     metric::CPU_POWER,
     metric::CPU_CLOCK,
+    metric::CPU_LOAD,
     metric::GPU_POWER,
     metric::GPU_CLOCK,
     metric::FAN_SPEED,
     metric::STORAGE_TEMP,
     metric::DISK_READ,
     metric::DISK_WRITE,
+    metric::DISK_READ_TOTAL,
+    metric::DISK_WRITE_TOTAL,
     metric::NET_DOWN,
     metric::NET_UP,
+    metric::NET_DOWN_TOTAL,
+    metric::NET_UP_TOTAL,
+    metric::UPTIME,
 ];
 
 #[cfg(test)]
@@ -341,6 +429,17 @@ mod tests {
     fn catalogue_keys_are_unique() {
         let keys: HashSet<_> = METRICS.iter().map(|id| id.key()).collect();
         assert_eq!(keys.len(), METRICS.len());
+    }
+
+    #[test]
+    fn every_rate_total_is_in_the_catalogue_and_derived() {
+        for &(rate, total) in &RATE_TOTALS {
+            assert!(METRICS.contains(&rate), "{rate} missing");
+            assert!(METRICS.contains(&total), "{total} missing");
+            assert!(is_derived(total));
+            assert!(!is_derived(rate));
+        }
+        assert!(!is_derived(CPU_USAGE));
     }
 
     #[test]

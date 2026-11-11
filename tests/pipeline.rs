@@ -67,7 +67,7 @@ fn widgets_see_the_highest_priority_live_value_and_its_explanation() {
     let state = poller.state();
     let view = state.lock().expect("shared state");
     let theme = ThemeName::MidnightDark.theme();
-    let ctx = WidgetCtx::new(&view.store, &view.diagnostics, &view.processes, &theme, 50);
+    let ctx = WidgetCtx::new(&view.store, &view.diagnostics, &view.processes, &view.cores, &theme, 50);
 
     assert_eq!(ctx.raw(CPU_TEMP), Some(55.0), "offline source skipped, primary wins over fallback");
     assert_eq!(ctx.raw(CPU_USAGE), Some(20.0), "fallback fills what primary lacks");

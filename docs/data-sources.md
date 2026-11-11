@@ -15,7 +15,12 @@ what the machine offers and shows only the sensors it actually reports.
 | `macos_sensors` | macOS sensors | macOS | `storage.temp`, `cpu.temp` (fallback) | none |
 | `ioreg` | macOS I/O Kit | macOS | `disk.read`, `disk.write`, `gpu.usage`, `vram.*` (unified memory) | none (`/usr/sbin/ioreg` ships with macOS) |
 | `nvml` | NVML (NVIDIA GPU) | Windows, Linux | `gpu.usage`, `gpu.temp`, `gpu.power`, `gpu.clock`, `vram.usage`, `vram.used`, `vram.total` | NVIDIA driver |
-| `sysinfo` | sysinfo | all | `cpu.usage`, `cpu.clock` (fallback), `ram.*`, `net.down`, `net.up` | none |
+| `sysinfo` | sysinfo | all | `cpu.usage`, `cpu.clock` (fallback), `ram.*`, `swap.*`, `cpu.load` (not Windows), `net.down`, `net.up`, `system.uptime` | none |
+
+With several NVIDIA GPUs, `nvml` still reports one set of readings:
+utilisation, temperature and clock describe the **busiest** device, power and
+VRAM the **sum** across devices. The process list's GPU column sums each
+process's per-device utilisation the same way (so it can exceed 100 %).
 
 Sources can be turned off in **Settings → Data sources**; the choice is
 remembered, and a disabled source is never polled at all — so a disabled
@@ -58,6 +63,8 @@ catalogue with live values.
 | `ram.usage` | RAM | Ram | % | 0–100 |
 | `ram.used` | RAM used | Ram | MB | — |
 | `ram.total` | RAM total | Ram | MB | — |
+| `swap.usage` | Swap | Ram | % | 0–100 |
+| `swap.used` | Swap used | Ram | MB | — |
 | `gpu.usage` | GPU | Gpu | % | 0–100 |
 | `gpu.temp` | GPU | Gpu | °C | 20–100 |
 | `vram.usage` | VRAM | Vram | % | 0–100 |
@@ -65,17 +72,38 @@ catalogue with live values.
 | `vram.total` | VRAM total | Vram | MB | — |
 | `cpu.power` | CPU power | Cpu | W | 0–200 |
 | `cpu.clock` | CPU clock | Cpu | MHz | 0–6000 |
+| `cpu.load` | Load (1 min) | Cpu | number | auto |
 | `gpu.power` | GPU power | Gpu | W | 0–450 |
 | `gpu.clock` | GPU clock | Gpu | MHz | 0–3200 |
 | `fan.speed` | Fan (fastest) | Cooling | RPM | 0–3000 |
 | `storage.temp` | Drive (hottest) | Storage | °C | 20–90 |
 | `disk.read` / `disk.write` | Read / Write | Storage | MB/s | auto |
+| `disk.read.total` / `disk.write.total` | Read / Write total | Storage | MB | auto |
 | `net.down` / `net.up` | Down / Up | Network | MB/s | auto |
+| `net.down.total` / `net.up.total` | Down / Up total | Network | MB | auto |
+| `system.uptime` | Uptime | System | duration | auto |
 
 Each entry's `scale` (`Scale::Fixed(lo, hi)` or `Scale::Auto(floor)`) sets a
-chart's y axis, and its `Unit` the value and axis formatting (MB as GB above
-1024 MB, MHz as GHz, rates as KB/s / MB/s / GB/s) — so charts and tiles need
-no per-metric code.
+chart's y axis, and its `Unit` the value and axis formatting (MB as GB/TB,
+MHz as GHz, rates as KB/s / MB/s / GB/s, durations as `3d 4h`) — so charts and
+tiles need no per-metric code.
+
+Notes on the newer readings:
+
+- **Load average** (`cpu.load`) is the one-minute load: runnable plus waiting
+  tasks, not a percentage — on an 8-core machine, 8.0 means fully busy.
+  Windows does not report one, so it stays `N/A` there.
+- **Swap** is only reported when swap is configured; a machine without swap
+  shows `N/A`, never a fake zero.
+- **Session totals** (`*.total`) are *derived*: no source provides them. The
+  store integrates the matching rate over the real time between samples, so
+  they count what moved **since this run started** and reset on restart. A
+  rate that goes missing holds the total at its last value; the total itself
+  never goes stale. Settings → Metrics lists their provider as `hardviz`.
+- **Per-core CPU** is not a catalogue metric (the catalogue is one id per
+  reading, and cores are a list). The **Per-Core CPU** card reads a dedicated
+  per-core channel that the poller samples only while the card is on screen,
+  the same arrangement as the process list.
 
 ---
 

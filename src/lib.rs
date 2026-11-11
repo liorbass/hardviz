@@ -15,6 +15,8 @@ pub mod app;
 #[cfg(test)]
 mod bundle;
 pub mod config;
+pub mod cores;
+pub mod export;
 pub mod log;
 pub mod metrics;
 pub mod num;

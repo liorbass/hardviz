@@ -288,12 +288,26 @@ impl AppConfig {
     /// # Errors
     /// There is no config directory, or creating or writing the file failed.
     pub fn save(&self) -> io::Result<()> {
+        let json = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
+        Self::write_json(&json)
+    }
+
+    /// Write `json` as the config, atomically: a temp file in the same
+    /// directory, then a rename over the live one. A crash mid-write leaves
+    /// the previous config intact instead of a truncated file.
+    ///
+    /// # Errors
+    /// There is no config directory, or creating or writing the file failed.
+    pub fn write_json(json: &str) -> io::Result<()> {
         let path = Self::path().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no config directory"))?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
-        fs::write(&path, json)
+        let tmp = path.with_extension("json.tmp");
+        fs::write(&tmp, json)?;
+        fs::rename(&tmp, &path).inspect_err(|_| {
+            let _ = fs::remove_file(&tmp);
+        })
     }
 
     fn replace_retired(&mut self, replaced: &[(&str, &[&str])]) {

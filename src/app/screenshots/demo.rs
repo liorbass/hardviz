@@ -4,8 +4,9 @@
 //! clock, no randomness, no reads from this machine.
 
 use crate::metrics::metric::{
-    CPU_CLOCK, CPU_POWER, CPU_TEMP, CPU_USAGE, DISK_READ, DISK_WRITE, FAN_SPEED, GPU_CLOCK, GPU_POWER, GPU_TEMP,
-    GPU_USAGE, NET_DOWN, NET_UP, RAM_TOTAL, RAM_USAGE, RAM_USED, STORAGE_TEMP, VRAM_TOTAL, VRAM_USAGE, VRAM_USED,
+    CPU_CLOCK, CPU_LOAD, CPU_POWER, CPU_TEMP, CPU_USAGE, DISK_READ, DISK_WRITE, FAN_SPEED, GPU_CLOCK, GPU_POWER,
+    GPU_TEMP, GPU_USAGE, NET_DOWN, NET_UP, RAM_TOTAL, RAM_USAGE, RAM_USED, STORAGE_TEMP, SWAP_USAGE, SWAP_USED, UPTIME,
+    VRAM_TOTAL, VRAM_USAGE, VRAM_USED,
 };
 use crate::metrics::MetricId;
 use crate::processes::ProcRow;
@@ -92,6 +93,11 @@ fn reading(t: f64, id: MetricId) -> f64 {
         (DISK_WRITE, 0.8 + 45.0 * bursts(t, 15)),
         (NET_DOWN, 0.2 + 18.0 * bursts(t, 16)),
         (NET_UP, 0.05 + 2.5 * bursts(t, 17)),
+        // An 8-core machine up for three days, with 8 GB of swap.
+        (CPU_LOAD, (m.cpu() / 100.0 * 8.0 + 0.4 * wander(t, 7.0, 18)).max(0.0)),
+        (SWAP_USAGE, 11.0 + 7.0 * m.load() + wander(t, 40.0, 19)),
+        (SWAP_USED, 8_192.0 * (11.0 + 7.0 * m.load()) / 100.0),
+        (UPTIME, 3.0 * 86_400.0 + t),
     ];
     table.iter().find(|(m, _)| *m == id).map_or(0.0, |&(_, v)| v)
 }
@@ -139,7 +145,11 @@ pub(super) fn sources() -> Vec<Box<dyn MetricSource>> {
             "NVML (NVIDIA GPU)",
             &[GPU_USAGE, GPU_TEMP, VRAM_USAGE, VRAM_USED, VRAM_TOTAL, GPU_POWER, GPU_CLOCK],
         ),
-        demo("sysinfo", "sysinfo (CPU/RAM)", &[CPU_USAGE, RAM_USAGE, RAM_USED, RAM_TOTAL, NET_DOWN, NET_UP]),
+        demo(
+            "sysinfo",
+            "sysinfo (CPU/RAM)",
+            &[CPU_USAGE, RAM_USAGE, RAM_USED, RAM_TOTAL, SWAP_USAGE, SWAP_USED, CPU_LOAD, NET_DOWN, NET_UP, UPTIME],
+        ),
     ]
 }
 

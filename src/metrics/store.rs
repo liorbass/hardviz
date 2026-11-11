@@ -1,6 +1,6 @@
 //! The time-series store: current, eased and historical values per metric.
 
-use super::{MetricId, METRICS};
+use super::{MetricId, METRICS, RATE_TOTALS};
 use std::collections::HashMap;
 
 /// Samples behind gauges, bars, tiles and sparklines: [`MetricStore::history`].
@@ -106,6 +106,28 @@ impl MetricStore {
                 // A gap keeps every series on the same time axis.
                 s.append(f64::NAN, self.capacity);
             }
+        }
+    }
+
+    /// Accumulate the session totals ([`RATE_TOTALS`]) from the current rate
+    /// readings over `dt_secs`, the real time since the previous sample.
+    /// Called once per published sample.
+    ///
+    /// The total integrates whatever the store considers current, so a brief
+    /// miss (the last reading is held for [`STALE_AFTER`] polls, as gauges
+    /// hold it) keeps accumulating at that reading; once the rate goes stale
+    /// the total holds its value — it never goes stale or backwards itself.
+    pub fn integrate(&mut self, dt_secs: f64) {
+        if dt_secs <= 0.0 {
+            return;
+        }
+        for &(rate, total) in &RATE_TOTALS {
+            let Some(v) = self.series.get(&rate).and_then(|s| s.current) else { continue };
+            let Some(t) = self.series.get_mut(&total) else { continue };
+            let sum = t.current.unwrap_or(0.0) + v * dt_secs;
+            t.current = Some(sum);
+            t.missing_streak = 0;
+            t.append(sum, self.capacity);
         }
     }
 
@@ -227,6 +249,40 @@ mod tests {
         let h = store.history(CPU_TEMP);
         assert!(h.last().is_some_and(|v| v.is_nan()), "a gap, not a zero");
         assert_eq!(h.len(), 2);
+    }
+
+    #[test]
+    fn totals_integrate_rates_and_hold_through_gaps() {
+        use crate::metrics::metric::{NET_DOWN, NET_DOWN_TOTAL};
+        let mut store = MetricStore::new();
+        assert_eq!(store.current(NET_DOWN_TOTAL), None, "nothing moved yet");
+
+        store.push(NET_DOWN, Some(10.0));
+        store.integrate(2.0);
+        assert_eq!(store.current(NET_DOWN_TOTAL), Some(20.0));
+        store.integrate(0.5);
+        assert_eq!(store.current(NET_DOWN_TOTAL), Some(25.0));
+
+        // Brief misses hold the last reading (as gauges do), so the total
+        // keeps integrating it; the third miss makes the rate stale.
+        for _ in 0..2 {
+            store.push(NET_DOWN, None);
+            store.integrate(1.0);
+        }
+        assert_eq!(store.current(NET_DOWN_TOTAL), Some(45.0));
+        for _ in 0..3 {
+            store.push(NET_DOWN, None);
+            store.integrate(1.0);
+        }
+        assert_eq!(store.current(NET_DOWN_TOTAL), Some(45.0), "stale rate: the total holds");
+
+        // And resumes accumulating when the rate returns.
+        store.push(NET_DOWN, Some(4.0));
+        store.integrate(1.0);
+        assert_eq!(store.current(NET_DOWN_TOTAL), Some(49.0));
+        assert_eq!(store.history(NET_DOWN_TOTAL).len(), 5, "one sample per accumulation");
+        store.integrate(0.0);
+        assert_eq!(store.current(NET_DOWN_TOTAL), Some(49.0), "no time, no accumulation");
     }
 
     #[test]

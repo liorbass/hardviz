@@ -10,9 +10,9 @@
 //! The poller thread takes registry -> store and registry -> diagnostics,
 //! never store and diagnostics together, and the registry is touched by the UI
 //! only through [`Poller::source_infos`] and [`Poller::set_source_enabled`],
-//! which hold nothing else. The UI reads store, diagnostics and processes only
-//! through [`SharedState::lock`], which takes them in that fixed order. So no
-//! two threads can wait on each other.
+//! which hold nothing else. The UI reads store, diagnostics, processes and
+//! cores only through [`SharedState::lock`], which takes them in that fixed
+//! order. So no two threads can wait on each other.
 
 use crate::metrics::{MetricId, MetricStore, METRICS};
 use crate::processes::{ProcRow, ProcessSampler};
@@ -42,6 +42,7 @@ pub struct SharedState {
     store: Arc<Mutex<MetricStore>>,
     diagnostics: Arc<Mutex<Diagnoses>>,
     processes: Arc<Mutex<Vec<ProcRow>>>,
+    cores: Arc<Mutex<Vec<f32>>>,
 }
 
 /// The published state, locked for reading. Hold it for one frame at most.
@@ -50,6 +51,9 @@ pub struct StateView<'a> {
     pub store: MutexGuard<'a, MetricStore>,
     pub diagnostics: MutexGuard<'a, Diagnoses>,
     pub processes: MutexGuard<'a, Vec<ProcRow>>,
+    /// Per-core CPU usage, 0-100. Empty unless a visible widget's
+    /// [`crate::widget::Widget::wants_cores`] is true.
+    pub cores: MutexGuard<'a, Vec<f32>>,
 }
 
 impl SharedState {
@@ -58,6 +62,7 @@ impl SharedState {
             store: Arc::new(Mutex::new(MetricStore::new())),
             diagnostics: Arc::new(Mutex::new(HashMap::new())),
             processes: Arc::new(Mutex::new(Vec::new())),
+            cores: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -69,6 +74,7 @@ impl SharedState {
             store: self.store.lock().ok()?,
             diagnostics: self.diagnostics.lock().ok()?,
             processes: self.processes.lock().ok()?,
+            cores: self.cores.lock().ok()?,
         })
     }
 
@@ -106,6 +112,8 @@ pub struct Poller {
     count: Arc<AtomicU64>,
     /// Set by the UI while a widget that shows processes is on screen.
     want_processes: Arc<AtomicBool>,
+    /// Set by the UI while a widget that shows per-core usage is on screen.
+    want_cores: Arc<AtomicBool>,
     /// Dropping it disconnects the thread's receiver, which stops it.
     commands: Sender<Command>,
     interval_ms: AtomicU64,
@@ -126,6 +134,7 @@ impl Poller {
             registry: Arc::new(Mutex::new(SourceRegistry::with_disabled(disabled.iter().cloned()))),
             count: Arc::new(AtomicU64::new(0)),
             want_processes: Arc::new(AtomicBool::new(false)),
+            want_cores: Arc::new(AtomicBool::new(false)),
             commands,
             interval_ms: AtomicU64::new(interval_ms),
         };
@@ -135,6 +144,7 @@ impl Poller {
             registry: Arc::clone(&poller.registry),
             count: Arc::clone(&poller.count),
             want_processes: Arc::clone(&poller.want_processes),
+            want_cores: Arc::clone(&poller.want_cores),
             inbox,
             interval: Duration::from_millis(interval_ms),
             notify: None,
@@ -171,6 +181,11 @@ impl Poller {
         self.want_processes.store(on, Ordering::Relaxed);
     }
 
+    /// Turn per-core sampling on or off; off clears the list.
+    pub fn set_sample_cores(&self, on: bool) {
+        self.want_cores.store(on, Ordering::Relaxed);
+    }
+
     /// Number of samples taken so far; monotonic.
     pub fn poll_count(&self) -> u64 {
         self.count.load(Ordering::Relaxed)
@@ -201,6 +216,7 @@ struct Worker {
     registry: Arc<Mutex<SourceRegistry>>,
     count: Arc<AtomicU64>,
     want_processes: Arc<AtomicBool>,
+    want_cores: Arc<AtomicBool>,
     inbox: Receiver<Command>,
     interval: Duration,
     notify: Option<Notify>,
@@ -223,7 +239,9 @@ impl Worker {
     fn run(mut self) {
         let catalogue: Vec<MetricId> = METRICS.to_vec();
         let mut processes = ProcessJob { sampler: None, next_due: Instant::now() };
+        let mut cores = CoreJob { sampler: None };
         let mut next_due = Instant::now();
+        let mut last_sample = Instant::now();
 
         loop {
             let now = Instant::now();
@@ -237,8 +255,13 @@ impl Worker {
                 if next_due <= now {
                     next_due = now + self.interval;
                 }
-                self.sample_metrics(&catalogue);
+                // Session totals integrate over the real elapsed time, not
+                // the nominal interval, so a stall does not over-count.
+                let dt = now.duration_since(last_sample).as_secs_f64();
+                last_sample = now;
+                self.sample_metrics(&catalogue, dt);
                 published = true;
+                published |= cores.tick(self.want_cores.load(Ordering::Relaxed), &self.state.cores);
                 let n = self.count.fetch_add(1, Ordering::Relaxed) + 1;
                 if n.is_multiple_of(HEALTH_EVERY) {
                     self.log_health(n);
@@ -269,8 +292,8 @@ impl Worker {
         crate::info!("poller stopping after {} samples", self.count.load(Ordering::Relaxed));
     }
 
-    fn sample_metrics(&self, catalogue: &[MetricId]) {
-        sample(&self.registry, &self.state, catalogue);
+    fn sample_metrics(&self, catalogue: &[MetricId], dt_secs: f64) {
+        sample(&self.registry, &self.state, catalogue, dt_secs);
     }
 
     /// Periodic health snapshot: confirms samples are accumulating, since
@@ -322,14 +345,42 @@ impl ProcessJob {
     }
 }
 
+/// Per-core sampling state, created only once a widget asks for cores.
+/// Unlike processes it is cheap (one CPU refresh), so it runs at the metric
+/// cadence rather than on a slower interval of its own.
+struct CoreJob {
+    sampler: Option<crate::cores::CoreSampler>,
+}
+
+impl CoreJob {
+    /// Sample while wanted; drop the sampler and clear the list when no
+    /// widget shows cores any more. Returns whether the list changed.
+    fn tick(&mut self, wanted: bool, out: &Mutex<Vec<f32>>) -> bool {
+        if !wanted {
+            if self.sampler.take().is_some() {
+                if let Ok(mut c) = out.lock() {
+                    c.clear();
+                }
+                return true;
+            }
+            return false;
+        }
+        let usage = self.sampler.get_or_insert_with(crate::cores::CoreSampler::new).sample();
+        if let Ok(mut c) = out.lock() {
+            *c = usage;
+        }
+        true
+    }
+}
+
 /// Poll every source, then publish values and diagnoses. Sources do their
 /// I/O holding only the registry lock, so a slow source never stalls
 /// rendering; the store is locked just for the publish.
-fn sample(registry: &Mutex<SourceRegistry>, state: &SharedState, catalogue: &[MetricId]) {
+fn sample(registry: &Mutex<SourceRegistry>, state: &SharedState, catalogue: &[MetricId], dt_secs: f64) {
     let Ok(mut reg) = registry.lock() else { return };
     reg.poll_sources();
     if let Ok(mut store) = state.store.lock() {
-        reg.publish(&mut store, catalogue);
+        reg.publish(&mut store, catalogue, dt_secs);
     }
     let fresh: Diagnoses = catalogue.iter().map(|&id| (id, reg.diagnose(id))).collect();
     drop(reg);
@@ -354,14 +405,16 @@ impl Poller {
             registry: Arc::new(Mutex::new(registry)),
             count: Arc::new(AtomicU64::new(0)),
             want_processes: Arc::new(AtomicBool::new(false)),
+            want_cores: Arc::new(AtomicBool::new(false)),
             commands,
             interval_ms: AtomicU64::new(1000),
         }
     }
 
-    /// Take one sample on the calling thread.
+    /// Take one sample on the calling thread, as if one second had passed
+    /// since the previous one (session totals accumulate deterministically).
     pub(crate) fn sample_now(&self) {
-        sample(&self.registry, &self.state, METRICS);
+        sample(&self.registry, &self.state, METRICS, 1.0);
         self.count.fetch_add(1, Ordering::Relaxed);
     }
 

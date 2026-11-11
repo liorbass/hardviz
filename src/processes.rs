@@ -29,6 +29,7 @@ pub struct ProcRow {
     /// Share of total CPU capacity, 0-100 (not per-core).
     pub cpu: f64,
     /// GPU (3D/compute) utilisation, 0-100; `None` without an NVIDIA GPU.
+    /// With several GPUs, the sum across devices (so it can exceed 100).
     pub gpu: Option<f64>,
     /// Bytes read + written per second, in MB/s.
     pub io: f64,
@@ -122,17 +123,26 @@ impl ProcessSampler {
     }
 
     /// Per-process GPU utilisation since the previous call, or `None` when
-    /// NVML is unavailable. A process seen in several samples keeps its peak.
+    /// NVML is unavailable. A process seen in several samples keeps its peak
+    /// per device; with several GPUs the per-device peaks are summed, so a
+    /// process using two boards shows its total draw (and can exceed 100).
     fn gpu_by_pid(&mut self) -> Option<HashMap<u32, f64>> {
         let nvml = self.nvml.as_ref()?;
-        let device = nvml.device_by_index(0).ok()?;
+        let count = nvml.device_count().ok()?;
         let mut map: HashMap<u32, f64> = HashMap::new();
-        // An error here usually means "no samples since then", not failure.
-        if let Ok(samples) = device.process_utilization_stats(self.gpu_seen) {
-            for s in samples {
-                self.gpu_seen = self.gpu_seen.max(s.timestamp);
-                let e = map.entry(s.pid).or_insert(0.0);
-                *e = e.max(f64::from(s.sm_util));
+        for i in 0..count {
+            let Ok(device) = nvml.device_by_index(i) else { continue };
+            let mut peaks: HashMap<u32, f64> = HashMap::new();
+            // An error here usually means "no samples since then", not failure.
+            if let Ok(samples) = device.process_utilization_stats(self.gpu_seen) {
+                for s in samples {
+                    self.gpu_seen = self.gpu_seen.max(s.timestamp);
+                    let e = peaks.entry(s.pid).or_insert(0.0);
+                    *e = e.max(f64::from(s.sm_util));
+                }
+            }
+            for (pid, peak) in peaks {
+                *map.entry(pid).or_insert(0.0) += peak;
             }
         }
         Some(map)

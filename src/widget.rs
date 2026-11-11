@@ -42,6 +42,9 @@ pub struct WidgetCtx<'a> {
     /// Top processes, newest sample. Empty unless a visible widget's
     /// [`Widget::wants_processes`] is true, since sampling them is costly.
     pub processes: &'a [ProcRow],
+    /// Per-core CPU usage (0-100), newest sample. Empty unless a visible
+    /// widget's [`Widget::wants_cores`] is true.
+    pub cores: &'a [f32],
     store: &'a MetricStore,
     diagnostics: &'a Diagnoses,
 }
@@ -52,10 +55,11 @@ impl<'a> WidgetCtx<'a> {
         store: &'a MetricStore,
         diagnostics: &'a Diagnoses,
         processes: &'a [ProcRow],
+        cores: &'a [f32],
         theme: &'a Theme,
         sample_interval_ms: u64,
     ) -> Self {
-        Self { theme, sample_interval_ms, chart_span_secs: 300, processes, store, diagnostics }
+        Self { theme, sample_interval_ms, chart_span_secs: 300, processes, cores, store, diagnostics }
     }
 
     /// Line charts show `secs` instead of the default five minutes.
@@ -210,6 +214,12 @@ pub trait Widget: Send {
     /// Whether this widget reads [`WidgetCtx::processes`]. Process sampling
     /// runs only while at least one visible widget returns true.
     fn wants_processes(&self) -> bool {
+        false
+    }
+
+    /// Whether this widget reads [`WidgetCtx::cores`]. Per-core sampling
+    /// runs only while at least one visible widget returns true.
+    fn wants_cores(&self) -> bool {
         false
     }
 
