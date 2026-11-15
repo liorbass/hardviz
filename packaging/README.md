@@ -129,8 +129,20 @@ name exist inside those archives, and `refresh.sh` is idempotent (it restored
 deliberately corrupted version/hash fields byte-for-byte, and left the
 `#{version}` and `$version` templates alone).
 
+The three winget manifests additionally validate against the real 1.12.0 JSON
+schemas from [microsoft/winget-cli](https://github.com/microsoft/winget-cli),
+key by key: required properties present, no key outside the schema's list at
+either the top level or inside `Installers`. That check is what caught
+`Architectures:` where the schema wants `Installers`, `InstallerScope` where it
+wants `Scope`, and `Commands` in the defaultLocale file, which only the
+installer manifest allows. Note that the schemas do not set
+`additionalProperties: false`, so a plain validator accepts invented keys
+silently — the key list has to be walked separately from the shape.
+
 Not checked, by definition: nothing has been validated by `winget validate`,
 `scoop checkup`, `makepkg`, `brew audit` or `brew install`, and no submission
 has been opened. Those tools run on Windows/Arch/macOS, none of which is this
-machine. Treat each manifest as a well-formed draft until its own tooling
-accepts it.
+machine. A schema-legal manifest is also not the same as an installer that
+runs: how `InstallModes` and `ArchiveBinariesDependOnPath` behave for a nested
+portable ZIP is taken from the documentation, not observed. Treat each manifest
+as a well-formed draft until its own tooling accepts it.

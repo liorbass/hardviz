@@ -85,7 +85,9 @@ done
 installer="${wingetdir}/LiorBass.HardViz.installer.yaml"
 set_field "$installer" "InstallerUrl: " "${base}/hardviz-windows-x64.zip"
 set_field "$installer" "InstallerSha256: " "$(upper "${sha[hardviz-windows-x64.zip]}")"
-set_field "$installer" "ReleaseDate: " "${release_date}"
+# Quoted on purpose: a bare 2026-11-11 is a YAML date, and the schema wants a
+# string — wingetcreate's validator rejects the unquoted form.
+set_field "$installer" "ReleaseDate: " "\"${release_date}\""
 
 set_field scoop/hardviz.json '"version": ' "\"${tag}\"," "  "
 set_field scoop/hardviz.json '"url": '     "\"${base}/hardviz-windows-x64.zip\"," "  "

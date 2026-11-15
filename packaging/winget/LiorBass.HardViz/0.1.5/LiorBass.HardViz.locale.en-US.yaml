@@ -30,8 +30,5 @@ Tags:
   - rust
   - terminal
   - monitoring
-Commands:
-  - hardviz
-  - hardviz-tui
 ManifestType: defaultLocale
 ManifestVersion: 1.12.0
