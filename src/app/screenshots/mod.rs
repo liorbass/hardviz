@@ -75,11 +75,11 @@ fn demo_app(ctx: &egui::Context, shot: &Shot) -> HardVizApp {
 /// Run `app` until its gauges have settled, then rasterise the last frame
 /// at `scale` output pixels per point.
 fn render(app: &mut HardVizApp, ctx: &egui::Context, size: egui::Vec2, scale: f32) -> Canvas {
-    render_ui(ctx, size, scale, |ctx| app.frame(ctx))
+    render_ui(ctx, size, scale, |ui| app.frame(ui))
 }
 
 /// Run `ui` for enough frames to settle, then rasterise the last one.
-fn render_ui(ctx: &egui::Context, size: egui::Vec2, scale: f32, mut ui: impl FnMut(&egui::Context)) -> Canvas {
+fn render_ui(ctx: &egui::Context, size: egui::Vec2, scale: f32, mut ui: impl FnMut(&mut egui::Ui)) -> Canvas {
     let ppp = scale * SUPERSAMPLE as f32;
     ctx.set_pixels_per_point(ppp);
     let mut textures = Textures::default();
@@ -91,8 +91,9 @@ fn render_ui(ctx: &egui::Context, size: egui::Vec2, scale: f32, mut ui: impl FnM
             predicted_dt: 0.05,
             ..Default::default()
         };
-        let out = ctx.run(input, &mut ui);
+        let mut out = ctx.run_ui(input, &mut ui);
         textures.update(&out.textures_delta);
+        out.textures_delta.clear();
         output = Some(out);
     }
     let out = output.expect("at least one frame");
@@ -100,6 +101,78 @@ fn render_ui(ctx: &egui::Context, size: egui::Vec2, scale: f32, mut ui: impl FnM
     let mut canvas = Canvas::new((size.x * ppp).round() as usize, (size.y * ppp).round() as usize);
     canvas.draw(&prims, &textures, out.pixels_per_point);
     canvas.downsample(SUPERSAMPLE)
+}
+
+/// Output frames in the animated demos; at `ANIM_FPS` this is a six-second loop.
+const ANIM_FRAMES: usize = 72;
+/// Frames per second, both for the demo clock and for the GIF made from them.
+const ANIM_FPS: f64 = 12.0;
+
+/// The surface an animation draws into. The compact strip is cropped to its
+/// contents; the windowed dashboard is not.
+struct Scene {
+    size: egui::Vec2,
+    ppp: f32,
+    compact: bool,
+}
+
+impl Scene {
+    fn new(shot: &Shot, scale: f32) -> Self {
+        let compact = matches!(shot.mode, ViewMode::Compact);
+        Self { size: if compact { COMPACT } else { WINDOW }, ppp: scale * SUPERSAMPLE as f32, compact }
+    }
+}
+
+/// Run one frame of `app`, writing it to `path` when given.
+fn tick(
+    app: &mut HardVizApp,
+    ctx: &egui::Context,
+    textures: &mut Textures,
+    scene: &Scene,
+    t: f64,
+    path: Option<&Path>,
+) {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, scene.size)),
+        time: Some(t),
+        predicted_dt: (1.0 / ANIM_FPS) as f32,
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, &mut |ui: &mut egui::Ui| app.frame(ui));
+    textures.update(&out.textures_delta);
+    out.textures_delta.clear();
+    let Some(path) = path else { return };
+    let prims = ctx.tessellate(out.shapes, out.pixels_per_point);
+    let mut canvas =
+        Canvas::new((scene.size.x * scene.ppp).round() as usize, (scene.size.y * scene.ppp).round() as usize);
+    canvas.draw(&prims, textures, out.pixels_per_point);
+    let canvas = canvas.downsample(SUPERSAMPLE);
+    let bounds = if scene.compact { canvas.content_bounds(6) } else { [0, 0, canvas.width, canvas.height] };
+    canvas.save_png(path, bounds).unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));
+}
+
+/// Render `shot` as a stream of PNG frames in `dir`, one demo sample per frame.
+///
+/// Unlike [`shoot`], the demo machine keeps polling while the frames are
+/// captured, so the charts scroll and the gauges tween as they do on screen.
+fn animate(shot: &Shot, dir: &Path, scale: f32) {
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx, shot);
+    let scene = Scene::new(shot, scale);
+    ctx.set_pixels_per_point(scene.ppp);
+    let mut textures = Textures::default();
+    std::fs::create_dir_all(dir).unwrap_or_else(|e| panic!("creating {}: {e}", dir.display()));
+    let dt = 1.0 / ANIM_FPS;
+    // Settle the layout and the gauge tweens before capturing anything.
+    for i in 0..60u32 {
+        tick(&mut app, &ctx, &mut textures, &scene, f64::from(i) * dt, None);
+    }
+    for n in 0..ANIM_FRAMES {
+        app.poller.sample_now();
+        let t = f64::from((60 + n) as u32) * dt;
+        tick(&mut app, &ctx, &mut textures, &scene, t, Some(&dir.join(format!("frame_{n:03}.png"))));
+    }
+    println!("wrote {ANIM_FRAMES} frames to {}", dir.display());
 }
 
 fn shoot(shot: &Shot, path: &Path, scale: f32) {
@@ -144,6 +217,45 @@ fn readme_screenshots() {
         let name = format!("theme-{}.png", theme.label().to_lowercase().replace(' ', "-"));
         shoot(&Shot::dashboard(theme), &dir.join(name), 0.5);
     }
+}
+
+/// Where `readme_animation` puts its frames: build output, not a git artifact.
+fn frames_dir(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("readme-anim").join(name)
+}
+
+/// Renders the streaming frames behind the README's animated demos.
+///
+/// Run it in release (the CPU rasteriser is the bottleneck, ~1 min for both),
+/// then turn the frames into the GIFs in `docs/images/` with `ffmpeg`. The two
+/// passes matter: a single pass quantises each frame on its own and the
+/// Cyberpunk gradients band.
+///
+/// ```sh
+/// cargo test --release --lib readme_animation -- --ignored
+///
+/// # 1200px wide, 12 fps: 3.8 MB for the 6-second dashboard loop.
+/// F=target/readme-anim/dashboard
+/// ffmpeg -y -framerate 12 -i $F/frame_%03d.png -vf "scale=1200:-2:flags=lanczos,palettegen" $F/pal.png
+/// ffmpeg -y -framerate 12 -i $F/frame_%03d.png -i $F/pal.png \
+///   -lavfi "scale=1200:-2:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" \
+///   docs/images/demo-dashboard.gif
+///
+/// # The strip is small enough to need no scaling: 37 KB.
+/// C=target/readme-anim/compact
+/// ffmpeg -y -framerate 12 -i $C/frame_%03d.png \
+///   -lavfi "[0:v]split[a][b];[a]palettegen[pal];[b][pal]paletteuse=dither=bayer:bayer_scale=5" \
+///   docs/images/demo-compact.gif
+/// ```
+#[test]
+#[ignore = "writes target/readme-anim; run with `cargo test --lib readme_animation -- --ignored`"]
+fn readme_animation() {
+    animate(&Shot::dashboard(ThemeName::Cyberpunk), &frames_dir("dashboard"), 1.0);
+    animate(
+        &Shot { theme: ThemeName::Cyberpunk, mode: ViewMode::Compact, edit_layout: false, settings: false },
+        &frames_dir("compact"),
+        1.5,
+    );
 }
 
 #[test]

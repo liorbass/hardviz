@@ -37,15 +37,15 @@ pub(super) fn shoot(theme: ThemeName, path: &Path) {
 
     let ctx = egui::Context::default();
     // Fonts exist only after a first frame.
-    let _ = ctx.run(egui::RawInput::default(), |_| {});
+    ctx.run_ui(egui::RawInput::default(), |_| {}).drop_without_applying_deltas();
     let font = FontId::monospace(FONT_SIZE);
-    let cell_w = ctx.fonts(|f| f.glyph_width(&font, 'M'));
+    let cell_w = ctx.fonts_mut(|f| f.glyph_width(&font, 'M'));
     let cell = egui::vec2(cell_w, (FONT_SIZE * LINE).round());
     let size = egui::vec2(cell.x * f32::from(COLS), cell.y * f32::from(ROWS));
     let fg_default = ui.theme.text_primary;
     let bg_default = ui.theme.bg_primary;
-    let canvas = render_ui(&ctx, size, 1.0, |ctx| {
-        egui::CentralPanel::default().frame(egui::Frame::none().fill(bg_default)).show(ctx, |ui| {
+    let canvas = render_ui(&ctx, size, 1.0, |root| {
+        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(bg_default)).show(root, |ui| {
             paint(ui.painter(), &buffer, cell, &font, fg_default, bg_default);
         });
     });

@@ -55,7 +55,7 @@ impl HardVizApp {
     /// Widgets as compact chips that wrap across the panel's full width.
     pub(super) fn settings_widgets(&self, ui: &mut egui::Ui, list: &[WidgetRow], action: &mut Option<SettingsAction>) {
         section_label(ui, &self.theme, "Widgets");
-        let chip = card_frame(&self.theme, self.theme.bg_widget, 8.0, egui::Margin::symmetric(6.0, 2.0));
+        let chip = card_frame(&self.theme, self.theme.bg_widget, 8.0, egui::Margin::symmetric(6, 2));
         let icon = |ui: &mut egui::Ui, glyph: &str, tip: &str, enabled: bool| -> bool {
             ui.add_enabled(
                 enabled,

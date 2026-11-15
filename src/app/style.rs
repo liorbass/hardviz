@@ -7,10 +7,10 @@ use eframe::egui;
 
 /// A rounded panel with the theme's border, e.g. the Settings card.
 pub(super) fn card_frame(theme: &Theme, fill: egui::Color32, rounding: f32, margin: egui::Margin) -> egui::Frame {
-    egui::Frame::none()
+    egui::Frame::NONE
         .fill(fill)
         .stroke(egui::Stroke::new(1.0_f32, theme.border))
-        .rounding(egui::Rounding::same(rounding))
+        .corner_radius(rounding)
         .inner_margin(margin)
 }
 
@@ -34,7 +34,7 @@ pub(super) fn bar_toggle(ui: &mut egui::Ui, theme: &Theme, label: &str, active: 
             theme.text_muted
         }))
         .fill(if active { with_alpha(theme.accent, 25) } else { egui::Color32::TRANSPARENT })
-        .rounding(egui::Rounding::same(6.0))
+        .corner_radius(egui::CornerRadius::same(6))
         .stroke(egui::Stroke::NONE),
     )
 }
@@ -68,12 +68,22 @@ pub(super) fn apply_theme_to_context(ctx: &egui::Context, theme: &Theme) {
 /// text-size setting; custom-drawn text uses `Theme::fs` with the same factor.
 pub(super) fn apply_font_scale(ctx: &egui::Context, scale: f32) {
     let base = egui::Style::default().text_styles;
-    ctx.style_mut(|style| {
+    ctx.all_styles_mut(|style| {
         for (k, v) in &mut style.text_styles {
             if let Some(b) = base.get(k) {
                 v.size = b.size * scale;
             }
         }
+    });
+}
+
+/// egui 0.29's button padding and row height. Later releases doubled the padding and
+/// grew rows by 2 points, which made Settings and the top bar noticeably
+/// taller than the layout was designed for.
+pub(super) fn keep_compact_spacing(ctx: &egui::Context) {
+    ctx.all_styles_mut(|style| {
+        style.spacing.button_padding = egui::vec2(4.0, 1.0);
+        style.spacing.interact_size.y = 18.0;
     });
 }
 
@@ -102,10 +112,10 @@ mod tests {
     #[test]
     fn card_frame_uses_the_theme_border() {
         let theme = ThemeName::Solarized.theme();
-        let frame = card_frame(&theme, theme.bg_widget, 8.0, egui::Margin::same(4.0));
+        let frame = card_frame(&theme, theme.bg_widget, 8.0, egui::Margin::same(4));
         assert_eq!(frame.fill, theme.bg_widget);
         assert_eq!(frame.stroke.color, theme.border);
-        assert_eq!(frame.rounding, egui::Rounding::same(8.0));
+        assert_eq!(frame.corner_radius, egui::CornerRadius::same(8));
     }
 
     #[test]
@@ -113,10 +123,10 @@ mod tests {
         let ctx = egui::Context::default();
         let theme = ThemeName::PureLight.theme();
         apply_theme_to_context(&ctx, &theme);
-        assert_eq!(ctx.style().visuals.panel_fill, theme.bg_primary);
-        assert_eq!(ctx.style().visuals.widgets.inactive.weak_bg_fill, theme.bg_widget);
+        assert_eq!(ctx.global_style().visuals.panel_fill, theme.bg_primary);
+        assert_eq!(ctx.global_style().visuals.widgets.inactive.weak_bg_fill, theme.bg_widget);
         apply_font_scale(&ctx, 2.0);
         let base = egui::Style::default().text_styles[&egui::TextStyle::Button].size;
-        assert_eq!(ctx.style().text_styles[&egui::TextStyle::Button].size, base * 2.0);
+        assert_eq!(ctx.global_style().text_styles[&egui::TextStyle::Button].size, base * 2.0);
     }
 }

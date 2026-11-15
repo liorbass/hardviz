@@ -235,7 +235,13 @@ pub fn frame(ui: &mut Ui, theme: &Theme, title: &str, add_contents: impl FnOnce(
     let size = ui.available_rect_before_wrap().size();
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let painter = ui.painter_at(rect.expand(1.0));
-    painter.rect(rect, egui::Rounding::same(10.0), theme.bg_widget, egui::Stroke::new(1.0_f32, theme.border));
+    painter.rect(
+        rect,
+        egui::CornerRadius::same(10),
+        theme.bg_widget,
+        egui::Stroke::new(1.0_f32, theme.border),
+        egui::StrokeKind::Middle,
+    );
     let galley = painter.layout_no_wrap(title.to_string(), theme.font(12.0), theme.text_secondary);
     let title_h = galley.size().y;
     painter.galley(rect.min + egui::vec2(CARD_MARGIN, CARD_MARGIN), galley, theme.text_secondary);

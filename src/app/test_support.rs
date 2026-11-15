@@ -48,13 +48,15 @@ pub(super) fn run(ctx: &egui::Context, app: &mut HardVizApp, events: Vec<egui::E
 
 /// Like [`run`], with `held` modifier keys down (as winit reports them).
 pub(super) fn run_held(ctx: &egui::Context, app: &mut HardVizApp, events: Vec<egui::Event>, held: egui::Modifiers) {
+    // Held keys arrive as an event and stay down until the next one, so
+    // every frame states them, NONE included.
+    let events = std::iter::once(egui::Event::ModifiersChanged(held)).chain(events).collect();
     let input = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0))),
         events,
-        modifiers: held,
         ..Default::default()
     };
-    let _ = ctx.run(input, |ctx| app.frame(ctx));
+    ctx.run_ui(input, |ui| app.frame(ui)).drop_without_applying_deltas();
 }
 
 pub(super) fn key(key: egui::Key) -> egui::Event {

@@ -136,7 +136,7 @@ pub fn draw_chart(ui: &mut Ui, theme: &Theme, spec: &ChartSpec) -> Rect {
     let label_w = (0..=4)
         .map(|i| {
             let text = spec.fmt(spec.y_max - span * f64::from(i) / 4.0);
-            ui.fonts(|f| f.layout_no_wrap(text, theme.font(9.0), Color32::WHITE).size().x)
+            ui.ctx().fonts_mut(|f| f.layout_no_wrap(text, theme.font(9.0), Color32::WHITE).size().x)
         })
         .fold(0.0_f32, f32::max);
     let left = (label_w + 9.0).max(34.0);

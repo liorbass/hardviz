@@ -137,7 +137,12 @@ impl Row {
             let fraction = to_f32(u / 100.0);
             crate::widgets::bar::paint_fill(painter, theme, bar, 3.0, fraction, self.color, self.severity);
         }
-        painter.add(egui::Shape::rect_stroke(bar, 3.0, egui::Stroke::new(0.5_f32, with_alpha(self.color, 70))));
+        painter.add(egui::Shape::rect_stroke(
+            bar,
+            3.0,
+            egui::Stroke::new(0.5_f32, with_alpha(self.color, 70)),
+            egui::StrokeKind::Middle,
+        ));
 
         let text_color = if self.usage.is_some() { theme.text_secondary } else { theme.text_muted };
         painter.text(

@@ -47,11 +47,9 @@ pub(super) struct Textures(HashMap<TextureId, Texture>);
 impl Textures {
     /// Apply a frame's texture updates (whole images and partial patches).
     pub(super) fn update(&mut self, delta: &TexturesDelta) {
-        for (id, d) in &delta.set {
-            let (size, texels): ([usize; 2], Vec<[f32; 4]>) = match &d.image {
-                ImageData::Color(img) => (img.size, img.pixels.iter().map(|&c| unit(c)).collect()),
-                ImageData::Font(img) => (img.size, img.srgba_pixels(None).map(unit).collect()),
-            };
+        for (id, d) in delta.set.iter().flat_map(|(id, ds)| ds.iter().map(move |d| (id, d))) {
+            let ImageData::Color(img) = &d.image;
+            let (size, texels): ([usize; 2], Vec<[f32; 4]>) = (img.size, img.pixels.iter().map(|&c| unit(c)).collect());
             match d.pos {
                 None => {
                     self.0.insert(*id, Texture { size, texels });

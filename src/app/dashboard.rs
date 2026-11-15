@@ -136,21 +136,22 @@ impl HardVizApp {
     fn paint_cell_feedback(&self, ui: &egui::Ui, uid: &str, rect: egui::Rect) {
         let accent = self.theme.accent;
         let halo = rect.expand(3.0);
-        let rounding = egui::Rounding::same(12.0);
+        let rounding = egui::CornerRadius::same(12);
 
         if self.dragging.as_deref() == Some(uid) {
-            let shadow = egui::epaint::Shadow {
-                offset: egui::vec2(0.0, 4.0),
-                blur: 14.0,
-                spread: 0.0,
-                color: with_alpha(accent, 90),
-            };
+            let shadow = egui::epaint::Shadow { offset: [0, 4], blur: 14, spread: 0, color: with_alpha(accent, 90) };
             ui.painter().add(shadow.as_shape(rect, rounding));
         }
 
         let is_target = self.drag_target.as_deref() == Some(uid) && self.dragging.is_some();
         if is_target {
-            ui.painter().rect(halo, rounding, with_alpha(accent, 40), egui::Stroke::new(2.0_f32, accent));
+            ui.painter().rect(
+                halo,
+                rounding,
+                with_alpha(accent, 40),
+                egui::Stroke::new(2.0_f32, accent),
+                egui::StrokeKind::Middle,
+            );
             return;
         }
         if !self.recently_swapped.iter().any(|u| u == uid) {
@@ -165,6 +166,7 @@ impl HardVizApp {
                 rounding,
                 with_alpha(accent, to_u8(glow * 24.0)),
                 egui::Stroke::new(1.0_f32 + glow, with_alpha(accent, to_u8(glow * 160.0))),
+                egui::StrokeKind::Middle,
             );
         }
     }
@@ -173,7 +175,7 @@ impl HardVizApp {
     fn draw_card(&mut self, ui: &mut egui::Ui, view: &StateView, uid: &str, rect: egui::Rect) {
         // Registered before the widget draws, so the widget's own controls
         // (e.g. the process table's sort headers) get their clicks first.
-        let menu = ui.interact(rect, egui::Id::new(("card_menu", uid)), egui::Sense::click());
+        let menu = ui.interact(rect, egui::Id::unique(("card_menu", uid)), egui::Sense::click());
         let ctx = WidgetCtx::new(
             &view.store,
             &view.diagnostics,
@@ -184,7 +186,7 @@ impl HardVizApp {
         )
         .chart_span(self.config.chart_span_secs);
         let widgets = &mut self.widgets;
-        ui.allocate_new_ui(
+        ui.scope_builder(
             egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)),
             |ui| {
                 let Some(w) = widgets.get_mut(uid) else { return };
@@ -225,7 +227,7 @@ impl HardVizApp {
                 for visual in Visual::ALL {
                     if ui.radio(current == visual, visual.label()).clicked() {
                         chosen = Some(visual);
-                        ui.close_menu();
+                        ui.close();
                     }
                 }
             }
@@ -238,7 +240,7 @@ impl HardVizApp {
                     let label = format!("Last {}", crate::widgets::span_label(secs * 1000));
                     if ui.radio(self.config.chart_span_secs == secs, label).clicked() {
                         span = Some(secs);
-                        ui.close_menu();
+                        ui.close();
                     }
                 }
             }
@@ -253,7 +255,7 @@ impl HardVizApp {
 
     /// Edit mode: drag the card to move it, or its corner grip to resize it.
     fn handle_cell_editing(&mut self, ui: &mut egui::Ui, uid: &str, rect: egui::Rect, geo: CellGeo) {
-        let response = ui.interact(rect, egui::Id::new(("widget_drag", uid)), egui::Sense::drag());
+        let response = ui.interact(rect, egui::Id::unique(("widget_drag", uid)), egui::Sense::drag());
         if response.drag_started() {
             self.dragging = Some(uid.to_string());
         }
@@ -261,7 +263,7 @@ impl HardVizApp {
         // Registered after the card so the grip wins the pointer where they overlap.
         let grip = egui::Rect::from_min_max(rect.max - egui::vec2(18.0, 18.0), rect.max);
         let handle = ui
-            .interact(grip, egui::Id::new(("widget_resize", uid)), egui::Sense::click_and_drag())
+            .interact(grip, egui::Id::unique(("widget_resize", uid)), egui::Sense::click_and_drag())
             .on_hover_text("Drag to resize \u{b7} double-click to reset");
         let active = handle.hovered() || handle.dragged();
         if active {
@@ -308,7 +310,7 @@ impl HardVizApp {
         );
         let current = self.widgets.get(uid).and_then(|w| w.visual());
         let (mut chosen, mut remove) = (None, false);
-        ui.allocate_new_ui(
+        ui.scope_builder(
             egui::UiBuilder::new().max_rect(bar).layout(egui::Layout::right_to_left(egui::Align::Center)),
             |ui| {
                 let close = flat_button(egui::RichText::new("\u{D7}").size(theme.fs(15.0)).color(theme.text_muted));
@@ -323,7 +325,7 @@ impl HardVizApp {
                     for visual in Visual::ALL {
                         if ui.radio(current == visual, visual.label()).clicked() {
                             chosen = Some(visual);
-                            ui.close_menu();
+                            ui.close();
                         }
                     }
                 })

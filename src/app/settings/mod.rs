@@ -31,7 +31,7 @@ impl HardVizApp {
         // only need `&self`.
         let mut action: Option<SettingsAction> = None;
 
-        let card = card_frame(&self.theme, self.theme.bg_secondary, 10.0, egui::Margin::same(14.0));
+        let card = card_frame(&self.theme, self.theme.bg_secondary, 10.0, egui::Margin::same(14));
         // Never wider than the window: an over-wide grid here widens the whole
         // scroll area and cuts the dashboard off on the right.
         let max_w = ui.available_width().min(ui.clip_rect().width()) - 28.0;
@@ -230,7 +230,7 @@ impl HardVizApp {
                     }))
                     .fill(if active { with_alpha(self.theme.accent, 30) } else { self.theme.bg_widget })
                     .stroke(egui::Stroke::new(1.0_f32, if active { self.theme.accent } else { self.theme.border }))
-                    .rounding(egui::Rounding::same(6.0))
+                    .corner_radius(egui::CornerRadius::same(6))
                     .min_size(egui::vec2(0.0, 24.0));
                 if ui.add(btn).clicked() {
                     *action = Some(SettingsAction::SetTheme(name));

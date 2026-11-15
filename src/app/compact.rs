@@ -39,7 +39,7 @@ impl HardVizApp {
         let (usage, temps) = self.compact_readouts();
         let theme = &self.theme;
         let alpha = to_u8(self.config.overlay_opacity * 255.0);
-        let card = card_frame(theme, with_alpha(theme.bg_widget, alpha), 10.0, egui::Margin::same(10.0));
+        let card = card_frame(theme, with_alpha(theme.bg_widget, alpha), 10.0, egui::Margin::same(10));
         let pinned = self.config.compact_always_on_top;
         let mut clicked = None;
 
@@ -63,7 +63,7 @@ impl HardVizApp {
 
         // The overlay is borderless: dragging anywhere on the bar moves the
         // window. Buttons only sense clicks, so they keep working.
-        let drag = ui.interact(shown.response.rect, egui::Id::new("compact_drag"), egui::Sense::drag());
+        let drag = ui.interact(shown.response.rect, egui::Id::unique("compact_drag"), egui::Sense::drag());
         if drag.drag_started() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }

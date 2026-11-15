@@ -30,7 +30,7 @@ impl HardVizApp {
             self.switch_view_mode(ViewMode::Windowed);
         }
         // Text input must not trigger mode switches.
-        let typing = ctx.wants_keyboard_input();
+        let typing = ctx.text_edit_focused();
         if !mods && !typing {
             if w {
                 self.switch_view_mode(ViewMode::Windowed);
@@ -109,7 +109,7 @@ impl HardVizApp {
                     let hint = egui::RichText::new("Drag a card to move it \u{b7} drag its corner to resize")
                         .size(self.theme.fs(10.0))
                         .color(theme.text_muted);
-                    let needed = ui.fonts(|f| {
+                    let needed = ui.ctx().fonts_mut(|f| {
                         f.layout_no_wrap(hint.text().to_string(), self.theme.font(10.0), egui::Color32::WHITE).size().x
                     });
                     if ui.available_width() > needed + 16.0 {
@@ -126,7 +126,7 @@ impl HardVizApp {
     }
 
     fn draw_add_widget_panel(&mut self, ui: &mut egui::Ui) {
-        let card = card_frame(&self.theme, self.theme.bg_secondary, 10.0, egui::Margin::same(12.0));
+        let card = card_frame(&self.theme, self.theme.bg_secondary, 10.0, egui::Margin::same(12));
 
         let factories: Vec<(&'static str, &'static str)> =
             self.widget_registry.factories().iter().map(|f| (f.type_id, f.display_name)).collect();
@@ -153,7 +153,7 @@ impl HardVizApp {
                             egui::Button::new(egui::RichText::new(*name).size(self.theme.fs(11.0)))
                                 .fill(self.theme.bg_widget)
                                 .stroke(egui::Stroke::new(1.0_f32, self.theme.border))
-                                .rounding(egui::Rounding::same(6.0)),
+                                .corner_radius(egui::CornerRadius::same(6)),
                         )
                         .clicked()
                     {

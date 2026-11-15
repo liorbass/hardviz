@@ -124,7 +124,7 @@ impl ProcessesWidget {
                 Pos2::new(c.right, rect.min.y + HEADER_H - 4.0),
             );
             let resp = ui
-                .interact(hit, ui.id().with(("proc_sort", c.title)), Sense::click())
+                .interact(hit, ui.scope_id().with(("proc_sort", c.title)), Sense::click())
                 .on_hover_text(format!("{}\nClick to sort", c.tip));
             if resp.clicked() {
                 self.sort = c.key;

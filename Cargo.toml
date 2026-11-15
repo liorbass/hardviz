@@ -15,8 +15,21 @@ publish = false
 members = ["xtask"]
 
 [dependencies]
-eframe = "0.29"
-egui = "0.29"
+# The glow (OpenGL) renderer, as before 0.37 made wgpu the default: a much
+# smaller binary, and no system fontconfig needed to build on Linux.
+eframe = { version = "0.37", default-features = false, features = [
+    "accesskit",
+    "clipboard",
+    "default_fonts",
+    "glow",
+    "links",
+    "wayland",
+    "x11",
+] }
+egui = "0.37"
+# Only to keep winit's default features (dlopen'd Wayland, client-side
+# decorations), which eframe enables only together with wgpu by default.
+winit = "0.30"
 sysinfo = "0.32"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -27,10 +40,9 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # The terminal UI (`hardviz-tui`), with its crossterm backend.
 ratatui = "0.29"
 
-# Windows builds carry two `windows` crate versions: eframe 0.29 (accesskit)
-# and wmi 0.13.4 use 0.58, while every sysinfo release up to 0.33 caps it at
-# 0.57. No compatible set of releases shares one version; revisit when
-# upgrading eframe or sysinfo.
+# Windows builds carry three `windows` crate versions: eframe 0.37
+# (accesskit) uses 0.62, wmi 0.13.4 uses 0.58, and sysinfo 0.32 uses 0.57.
+# Upgrading wmi and sysinfo could bring them together.
 [target.'cfg(windows)'.dependencies]
 wmi = "0.13"
 

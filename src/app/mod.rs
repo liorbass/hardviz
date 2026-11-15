@@ -117,6 +117,7 @@ impl HardVizApp {
     /// An app reading from `poller`, which the caller has already started.
     fn with_poller(ctx: &egui::Context, config: AppConfig, poller: Poller) -> Self {
         style::install_font_fallbacks(ctx);
+        style::keep_compact_spacing(ctx);
         // Redraw the moment a sample lands. A repaint timer of our own runs
         // out of phase with the poller, so samples would show up anywhere
         // from at once to a whole interval late: two updates in quick
@@ -249,13 +250,14 @@ impl HardVizApp {
 }
 
 impl HardVizApp {
-    /// One frame: everything `eframe::App::update` does.
-    fn frame(&mut self, ctx: &egui::Context) {
+    /// One frame: everything `eframe::App::ui` does.
+    fn frame(&mut self, root: &mut egui::Ui) {
+        let ctx = &root.ctx().clone();
         self.tick(ctx);
         self.handle_shortcuts(ctx);
 
-        let panel = egui::Frame::none().fill(self.theme.bg_primary).inner_margin(egui::Margin::same(12.0));
-        egui::CentralPanel::default().frame(panel).show(ctx, |ui| match self.config.view_mode {
+        let panel = egui::Frame::NONE.fill(self.theme.bg_primary).inner_margin(egui::Margin::same(12));
+        egui::CentralPanel::default().frame(panel).show(root, |ui| match self.config.view_mode {
             ViewMode::Compact => self.draw_compact(ui),
             ViewMode::Windowed | ViewMode::Fullscreen => self.draw_main(ui),
         });
@@ -284,8 +286,8 @@ fn still_easing(id: crate::metrics::MetricId, current: f64, eased: f64) -> bool 
 }
 
 impl eframe::App for HardVizApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.frame(ctx);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.frame(ui);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -312,7 +314,7 @@ mod tests {
         app.config.font_scale = 1.5;
         run(&ctx, &mut app, vec![]);
         assert_eq!(app.theme.fs(10.0), 15.0);
-        let body = ctx.style().text_styles[&egui::TextStyle::Body].size;
+        let body = ctx.global_style().text_styles[&egui::TextStyle::Body].size;
         assert_eq!(body, egui::Style::default().text_styles[&egui::TextStyle::Body].size * 1.5);
     }
 

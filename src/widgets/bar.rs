@@ -62,7 +62,7 @@ impl Widget for BarWidget {
         painter.rect_filled(bar, rounding, theme.gauge_bg);
         let fraction = to_f32(Scale::fraction(value, range));
         paint_fill(&painter, theme, bar, rounding, fraction, color, d.high_is_bad());
-        painter.rect_stroke(bar, rounding, egui::Stroke::new(0.5_f32, with_alpha(color, 70)));
+        painter.rect_stroke(bar, rounding, egui::Stroke::new(0.5_f32, with_alpha(color, 70)), egui::StrokeKind::Middle);
 
         let font = theme.font(9.0);
         let below = bar.max.y + 3.0;

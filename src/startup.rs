@@ -101,8 +101,9 @@ fn instance_lock() -> Lock {
 fn already_running_window() -> eframe::Result<()> {
     struct Notice;
     impl eframe::App for Notice {
-        fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+            let ctx = ui.ctx().clone();
+            egui::CentralPanel::default().show(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(20.0);
                     ui.label(egui::RichText::new("HardViz is already running.").strong());
