@@ -1,0 +1,26 @@
+{
+  "version": "0.1.5",
+  "description": "Modular hardware monitoring dashboard: CPU, GPU, memory, temperatures, network and disks, with a compact always-on-top overlay",
+  "homepage": "https://github.com/liorbass/hardviz",
+  "license": {
+    "identifier": "MIT OR Apache-2.0",
+    "url": "https://github.com/liorbass/hardviz/blob/main/LICENSE-MIT"
+  },
+  "url": "https://github.com/liorbass/hardviz/releases/download/v0.1.5/hardviz-windows-x64.zip",
+  "hash": "1a4d24398530375c74055d5f53c2d95837794809afaeff73b0d1ae4a5b5e9157",
+  "extract_dir": "hardviz-windows-x64",
+  "bin": [
+    ["hardviz.exe", "hardviz"],
+    ["hardviz-tui.exe", "hardviz-tui"]
+  ],
+  "shortcuts": [
+    ["hardviz.exe", "HardViz"]
+  ],
+  "checkver": {
+    "github": "https://github.com/liorbass/hardviz"
+  },
+  "autoupdate": {
+    "url": "https://github.com/liorbass/hardviz/releases/download/v$version/hardviz-windows-x64.zip",
+    "extract_dir": "hardviz-windows-x64"
+  }
+}

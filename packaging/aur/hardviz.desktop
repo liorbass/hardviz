@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=HardViz
+GenericName=Hardware monitor
+Comment=Watch CPU, GPU, memory, temperatures, network and disks
+Exec=hardviz %u
+Terminal=false
+Categories=System;Monitor;
+Keywords=hardware;monitor;cpu;gpu;temperature;fan;sensor;system;
+StartupNotify=false
+X-GNOME-UsesNotifications=false

@@ -1,0 +1,36 @@
+# Maintainer: Lior Bass <lior.bass at users.noreply.github.com>
+# Contributor: Lior Bass
+pkgname=hardviz-bin
+_pkgname=hardviz
+pkgver=0.1.5
+pkgrel=1
+pkgdesc="Modular hardware monitoring dashboard: CPU, GPU, memory, temperatures, network and disks"
+arch=('x86_64')
+url="https://github.com/liorbass/hardviz"
+license=('MIT' 'Apache-2.0')
+provides=('hardviz')
+conflicts=('hardviz')
+# The release binaries are already stripped by the crate's release profile;
+# stripping them again would only churn the hash.
+options=('!strip')
+source=(
+  "${_pkgname}-${pkgver}-linux-x64.tar.gz::${url}/releases/download/v${pkgver}/hardviz-linux-x64.tar.gz"
+  "${_pkgname}.desktop"
+)
+sha256sums=(
+  'a0c2d8320e13097373097fd4069a8919839e2a67f642d6b4c4da2349a4a53433'
+  '90c3c2f03cb368631598f6c7e277db6b678fc0d4af0def4e163a0368fa6c6443'
+)
+
+package() {
+  cd "${srcdir}/${_pkgname}-linux-x64"
+
+  install -Dm755 "${_pkgname}"      "${pkgdir}/usr/bin/${_pkgname}"
+  install -Dm755 "${_pkgname}-tui"  "${pkgdir}/usr/bin/${_pkgname}-tui"
+
+  install -Dm644 "${srcdir}/${_pkgname}.desktop" \
+    "${pkgdir}/usr/share/applications/${_pkgname}.desktop"
+
+  install -Dm644 LICENSE-MIT    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-MIT"
+  install -Dm644 LICENSE-APACHE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-APACHE"
+}
