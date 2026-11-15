@@ -2,7 +2,6 @@
 
 [![Latest release](https://img.shields.io/github/v/release/liorbass/hardviz?sort=semver&label=release&display_name=tag)](https://github.com/liorbass/hardviz/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/liorbass/hardviz/ci.yml?label=CI)](https://github.com/liorbass/hardviz/actions/workflows/ci.yml)
-[![Downloads](https://img.shields.io/github/downloads/liorbass/hardviz/total?label=downloads)](https://github.com/liorbass/hardviz/releases)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-informational)
 ![Rust](https://img.shields.io/badge/rust-stable-orange?logo=rust)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
@@ -13,15 +12,28 @@
 
 [All releases](https://github.com/liorbass/hardviz/releases) · [Code signing policy](#code-signing-policy)
 
-HardViz keep an eye on your hardware.
+HardViz keeps an eye on your hardware.
 
-Its modular, FAST, LITE and support multiple themes.
+It is modular, fast and light, and it supports multiple themes.
 
 For Windows, Linux and macOS, built with Rust and [egui](https://github.com/emilk/egui).
 
-This was built for my own usage, I didn't find any monitoring tool that I can setup the exact way I wanted, so we got this.
+I built this for my own use: I never found a monitoring tool I could set up
+exactly the way I wanted it, so I wrote one.
 
-![HardViz dashboard (Midnight theme, demo data): usage gauges, memory bars, sensor tiles, usage, temperature, network and disk charts, top processes](docs/images/dashboard.png)
+![HardViz dashboard (Cyberpunk theme, live demo data): usage gauges, memory bars, sensor tiles, usage, temperature, network and disk charts streaming, top processes](docs/images/demo-dashboard.gif)
+
+The compact overlay is a borderless 640×96 strip that stays on top of
+everything — a HUD for a second monitor, or for the corner of a game:
+
+![HardViz compact overlay (Cyberpunk theme, live demo data): a thin always-on-top strip of gauges and sparklines](docs/images/demo-compact.gif)
+
+Five themes, each of them a full dashboard rather than a recolour:
+
+| | | |
+|---|---|---|
+| ![Midnight theme dashboard](docs/images/theme-midnight.png) | ![Light theme dashboard](docs/images/theme-light.png) | ![OLED Black theme dashboard](docs/images/theme-oled.png) |
+| ![Cyberpunk theme dashboard](docs/images/theme-cyber.png) | ![Solarized theme dashboard](docs/images/theme-solar.png) | |
 
 Prefer a terminal? `hardviz-tui` draws the same readings in any console —
 over SSH, on a machine without a desktop, or in a spare pane:
