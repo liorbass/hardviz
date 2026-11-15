@@ -86,7 +86,15 @@ impl Canvas {
     pub(super) fn draw(&mut self, prims: &[ClippedPrimitive], textures: &Textures, ppp: f32) {
         for p in prims {
             let epaint::Primitive::Mesh(mesh) = &p.primitive else { continue };
-            let Some(tex) = textures.0.get(&mesh.texture_id) else { continue };
+            let Some(tex) = textures.0.get(&mesh.texture_id) else {
+                debug_assert!(
+                    textures.0.contains_key(&mesh.texture_id),
+                    "a mesh samples texture {:?}, which was never uploaded: every prim like it is skipped, so \
+                     the frame comes out flat",
+                    mesh.texture_id
+                );
+                continue;
+            };
             let clip = p.clip_rect;
             let clip = [
                 (clip.min.x * ppp).round().max(0.0) as usize,

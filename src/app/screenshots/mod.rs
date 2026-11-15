@@ -74,15 +74,25 @@ fn demo_app(ctx: &egui::Context, shot: &Shot) -> HardVizApp {
 
 /// Run `app` until its gauges have settled, then rasterise the last frame
 /// at `scale` output pixels per point.
-fn render(app: &mut HardVizApp, ctx: &egui::Context, size: egui::Vec2, scale: f32) -> Canvas {
-    render_ui(ctx, size, scale, |ui| app.frame(ui))
+fn render(app: &mut HardVizApp, ctx: &egui::Context, textures: &mut Textures, size: egui::Vec2, scale: f32) -> Canvas {
+    render_ui(ctx, textures, size, scale, |ui| app.frame(ui))
 }
 
 /// Run `ui` for enough frames to settle, then rasterise the last one.
-fn render_ui(ctx: &egui::Context, size: egui::Vec2, scale: f32, mut ui: impl FnMut(&mut egui::Ui)) -> Canvas {
+///
+/// `textures` is the caller's because it mirrors what a GPU holds for *this*
+/// `Context`: egui uploads the glyph atlas once, in the first frame that needs
+/// it, and after that only sends patches into it. A map per call would lose the
+/// allocation and then silently discard the patches.
+fn render_ui(
+    ctx: &egui::Context,
+    textures: &mut Textures,
+    size: egui::Vec2,
+    scale: f32,
+    mut ui: impl FnMut(&mut egui::Ui),
+) -> Canvas {
     let ppp = scale * SUPERSAMPLE as f32;
     ctx.set_pixels_per_point(ppp);
-    let mut textures = Textures::default();
     let mut output = None;
     for frame in 0..60 {
         let input = egui::RawInput {
@@ -99,7 +109,7 @@ fn render_ui(ctx: &egui::Context, size: egui::Vec2, scale: f32, mut ui: impl FnM
     let out = output.expect("at least one frame");
     let prims = ctx.tessellate(out.shapes, out.pixels_per_point);
     let mut canvas = Canvas::new((size.x * ppp).round() as usize, (size.y * ppp).round() as usize);
-    canvas.draw(&prims, &textures, out.pixels_per_point);
+    canvas.draw(&prims, textures, out.pixels_per_point);
     canvas.downsample(SUPERSAMPLE)
 }
 
@@ -178,8 +188,9 @@ fn animate(shot: &Shot, dir: &Path, scale: f32) {
 fn shoot(shot: &Shot, path: &Path, scale: f32) {
     let ctx = egui::Context::default();
     let mut app = demo_app(&ctx, shot);
+    let mut textures = Textures::default();
     let compact = matches!(shot.mode, ViewMode::Compact);
-    let canvas = render(&mut app, &ctx, if compact { COMPACT } else { WINDOW }, scale);
+    let canvas = render(&mut app, &ctx, &mut textures, if compact { COMPACT } else { WINDOW }, scale);
     // The compact strip floats in its window; keep just the strip.
     let bounds = if compact { canvas.content_bounds(6) } else { [0, 0, canvas.width, canvas.height] };
     canvas.save_png(path, bounds).unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));
@@ -262,7 +273,8 @@ fn readme_animation() {
 fn a_demo_frame_renders_headlessly() {
     let ctx = egui::Context::default();
     let mut app = demo_app(&ctx, &Shot::dashboard(ThemeName::MidnightDark));
-    let canvas = render(&mut app, &ctx, egui::vec2(400.0, 300.0), 0.5);
+    let mut textures = Textures::default();
+    let canvas = render(&mut app, &ctx, &mut textures, egui::vec2(400.0, 300.0), 0.5);
     assert_eq!((canvas.width, canvas.height), (200, 150));
     // Cards and text: far from a single flat colour.
     let [x0, y0, x1, y1] = canvas.content_bounds(0);

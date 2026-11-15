@@ -21,7 +21,7 @@ For Windows, Linux and macOS, built with Rust and [egui](https://github.com/emil
 I built this for my own use: I never found a monitoring tool I could set up
 exactly the way I wanted it, so I wrote one.
 
-![HardViz dashboard (Cyberpunk theme): a six-second loop of demo data — usage gauges, memory bars, sensor tiles, streaming charts and top processes, idling then running a render job to the redline](docs/images/demo-dashboard.gif)
+![HardViz dashboard (Cyberpunk theme): a six-second loop of demo data — the usage gauges sweep the whole scale, from parked at 0 % to pinned at 100 %, with memory bars, sensor tiles, streaming charts and top processes](docs/images/demo-dashboard.gif)
 
 The compact overlay is a borderless 640×96 strip that stays on top of
 everything — a HUD for a second monitor, or for the corner of a game:
@@ -29,9 +29,11 @@ everything — a HUD for a second monitor, or for the corner of a game:
 ![HardViz compact overlay (Cyberpunk theme): the same six-second loop, in a thin always-on-top strip](docs/images/demo-compact.gif)
 
 Both loops run on a simulated machine, so nothing here is anyone's real hardware:
-a render job starts, ramps the gauges through the warning colours into red, and
-settles back to idle. That is also what the stills below show — the same demo
-data, frozen at a moment mid-job.
+render job after render job, taking the usage gauges from a parked 0 % to a
+pinned 100 % and back — up through the warning colours into red, and down
+through them again — while the memory bars fill to the brim and empty. That is
+also what the stills below show — the same demo data, frozen at a moment
+mid-job.
 
 Five themes, each of them a full dashboard rather than a recolour:
 

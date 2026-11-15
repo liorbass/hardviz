@@ -68,31 +68,38 @@ const CYCLE: f64 = 72.0;
 /// ceiling for a frame or two — not enough for a GIF that has to *show* the
 /// change. This dwells there for several, and speeds up through the middle.
 const DWELL: f64 = 0.75;
+/// How far past its band the sweep reaches before [`act`] clips it. At 1.0 a
+/// gauge would touch its ceiling only at the exact crest, which a 72-sample
+/// loop may not even step on; overshooting keeps it pinned there instead.
+const OVERSHOOT: f64 = 1.15;
 
 /// How far a metric swings during the cycle.
 struct Cycle {
-    /// Floor and ceiling of the sweep, in the metric's own units. Deliberately
-    /// wide: [`Theme::severity_color`](crate::theme::Theme::severity_color)
-    /// keeps a metric's own colour until half the scale, fades it to `warning`
-    /// at three quarters and to `danger` at the top, so a gauge has to cover
+    /// Floor and ceiling of the sweep, in the metric's own units, and hard
+    /// limits: [`act`] clips to them. Deliberately wide, because
+    /// [`Theme::severity_color`](crate::theme::Theme::severity_color) keeps a
+    /// metric's own colour until half the scale, fades it to `warning` at three
+    /// quarters and to `danger` only at the very top, so a gauge has to cover
     /// most of that range before the colour change reads on screen.
     lo: f64,
     hi: f64,
     /// Ripple added on top, in the metric's own units, so the sweep is not a
-    /// perfect sine.
+    /// perfect sine. Clipped away at the ends of the band, where it would only
+    /// disagree with the number the gauge is showing.
     ripple: f64,
 }
 
-/// The two usage gauges sweep the widest bands: they are what the GIF has to
-/// show, and idle-to-redline is the whole severity colour story. The ceilings
-/// stop just short of 100 — high enough that `severity_color` gets past `warning`
-/// to its `danger` red, and low enough that the ripple on top cannot put "102 %"
-/// on a gauge.
-const CYCLE_CPU: Cycle = Cycle { lo: 6.0, hi: 98.0, ripple: 1.5 };
-const CYCLE_GPU: Cycle = Cycle { lo: 5.0, hi: 97.0, ripple: 2.0 };
+/// The two usage gauges sweep the whole scale, because they are what the GIF has
+/// to show and idle-to-redline is the entire severity colour story. The clip in
+/// [`act`] is what makes that safe: the ripple over a 100 % crest would otherwise
+/// put "102 %" on a metric whose scale stops at 100. [`OVERSHOOT`] is what parks
+/// the gauge on 0 % and 100 % for a dozen frames; this is only the texture that
+/// keeps the sweep from reading as a drawn sine.
+const CYCLE_CPU: Cycle = Cycle { lo: 0.0, hi: 100.0, ripple: 1.5 };
+const CYCLE_GPU: Cycle = Cycle { lo: 0.0, hi: 100.0, ripple: 2.0 };
 
 /// One metric at `t`: the `idle` script throughout the history the stills use,
-/// then one [`Cycle`].
+/// then one [`Cycle`], clipped to that cycle's band.
 ///
 /// The sweep is the sine pair through the point where the script stops, so it
 /// leaves the render job at exactly its last value, climbs to `hi` in the first
@@ -118,7 +125,8 @@ fn act(t: f64, idle: impl Fn(f64) -> f64, c: Cycle) -> f64 {
     // `phase` one period later — and zero at the seam, which is what keeps the
     // first captured frame on the value the history ends at.
     let x = phase + DWELL * (2.0 * phase).sin() / 2.0;
-    centre + amp * (a * x.cos() + b * x.sin()) + c.ripple * wander(t, 5.0, 21)
+    let sweep = OVERSHOOT * (a * x.cos() + b * x.sin());
+    (centre + amp * sweep.clamp(-1.0, 1.0) + c.ripple * wander(t, 5.0, 21)).clamp(c.lo, c.hi)
 }
 
 /// Overall load, 0..1: one render job, starting about two minutes in.
@@ -151,8 +159,8 @@ fn reading(t: f64, id: MetricId) -> f64 {
     // machine.
     let cpu_now = act(t, cpu, CYCLE_CPU);
     let gpu_now = act(t, gpu, CYCLE_GPU);
-    let ram_pct = act(t, |t| ram_used(t) / RAM_TOTAL_MB * 100.0, Cycle { lo: 21.0, hi: 95.0, ripple: 0.8 });
-    let vram_pct = act(t, |t| vram_used(t) / VRAM_TOTAL_MB * 100.0, Cycle { lo: 12.0, hi: 94.0, ripple: 0.7 });
+    let ram_pct = act(t, |t| ram_used(t) / RAM_TOTAL_MB * 100.0, Cycle { lo: 20.0, hi: 99.0, ripple: 0.8 });
+    let vram_pct = act(t, |t| vram_used(t) / VRAM_TOTAL_MB * 100.0, Cycle { lo: 10.0, hi: 98.0, ripple: 0.7 });
     let swap_pct = act(t, |t| 11.0 + 7.0 * load(t) + wander(t, 40.0, 19), Cycle { lo: 3.0, hi: 58.0, ripple: 0.6 });
     let held = |past: f64, from_pct: f64, total: f64| if t <= STATIC_LAST { past } else { total * from_pct / 100.0 };
 
@@ -340,6 +348,39 @@ mod tests {
             let high = colour(*fills.iter().max_by(|a, b| a.total_cmp(b)).unwrap());
             assert_eq!(low, theme.metric_color(def.kind), "{id:?} idle colour");
             assert_ne!(low, high, "{id:?} colour never changes across the sweep");
+        }
+    }
+
+    /// Lowest and highest reading a metric reaches across the captured frames.
+    fn span(id: MetricId) -> (f64, f64) {
+        frames()
+            .map(|t| reading(t as f64, id))
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| (lo.min(v), hi.max(v)))
+    }
+
+    /// What the README promises, in the units a reader actually sees: the usage
+    /// gauges empty to nothing and fill the whole arc, and hold there long enough
+    /// to be noticed rather than flashing past.
+    #[test]
+    fn the_usage_gauges_run_the_full_scale() {
+        for id in [CPU_USAGE, GPU_USAGE] {
+            let (lo, hi) = span(id);
+            assert!(lo <= 0.1, "{id:?} never idles: lowest {lo:.1} %");
+            assert!(hi >= 99.9, "{id:?} never reaches the redline: highest {hi:.1} %");
+            let bottoms = frames().filter(|&t| reading(t as f64, id) <= 0.5).count();
+            let tops = frames().filter(|&t| reading(t as f64, id) >= 99.5).count();
+            assert!(bottoms >= 6 && tops >= 6, "{id:?} is at an end of its scale for {tops} / {bottoms} frames");
+        }
+    }
+
+    /// The other half of the same change: a percentage on a 0..100 scale has to
+    /// stay inside it, ripple and clipping notwithstanding.
+    #[test]
+    fn no_frame_reads_past_the_scale() {
+        for id in [CPU_USAGE, GPU_USAGE, RAM_USAGE, VRAM_USAGE, SWAP_USAGE] {
+            let (lo, hi) = span(id);
+            assert!((0.0..=100.0).contains(&hi), "{id:?} peaks at {hi:.1} %");
+            assert!((0.0..=100.0).contains(&lo), "{id:?} bottoms at {lo:.1} %");
         }
     }
 
