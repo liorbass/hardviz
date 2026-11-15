@@ -141,19 +141,109 @@ jobs:
             dist/hardviz-${{ matrix.name }}.tar.gz
           if-no-files-found: error
 
+  sign:
+    # Authenticode-signs the Windows package through the SignPath Foundation
+    # (free for open source projects). Opt-in: the job stays skipped until the
+    # SIGNPATH_ORGANIZATION_ID repository variable is set, so releases keep
+    # publishing the unsigned zip for as long as the application is pending.
+    #
+    # What gets signed is decided by .signpath/artifact-configurations/default.xml
+    # (our own two executables, not the bundled LibreHardwareMonitor ones).
+    name: Sign (Windows)
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v') && vars.SIGNPATH_ORGANIZATION_ID != ''
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      # The action reads the artifact configuration from the repository.
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: hardviz-windows-x64
+          path: unsigned
+
+      # The signing action takes an artifact id, not a file path.
+      - name: Upload the package for signing
+        id: for-signing
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-for-signing
+          path: unsigned/hardviz-windows-x64.zip
+          if-no-files-found: error
+
+      # build.rs stamps the version resource from Cargo.toml (`0.1.5`), not from
+      # the tag (`v0.1.5`), and the configuration compares them.
+      - name: Version for the signing request
+        id: version
+        shell: pwsh
+        run: |
+          "version=$($env:GITHUB_REF_NAME -replace '^v', '')" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Submit signing request
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: hardviz
+          # Must match the signing policy in the SignPath project; a
+          # subscription created through the Foundation program starts as
+          # `release-signing`.
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: default
+          github-artifact-id: ${{ steps.for-signing.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+          # A person approves every request in SignPath's UI, so this waits for
+          # that click instead of failing the release.
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+
+      - name: Upload the signed package
+        uses: actions/upload-artifact@v6
+        with:
+          name: hardviz-windows-x64-signed
+          path: signed
+          if-no-files-found: error
+
   release:
     # Pushing a tag like v0.2.0 publishes a GitHub release with every package.
     name: GitHub release
-    needs: package
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package, sign]
+    # `sign` is normally skipped (see its gate), and a skipped dependency would
+    # skip this job too, hence always() plus the explicit result checks.
+    if: >-
+      always() && startsWith(github.ref, 'refs/tags/v') &&
+      needs.package.result == 'success' &&
+      (needs.sign.result == 'success' || needs.sign.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v7
         with:
-          path: dist
-          merge-multiple: true
+          path: artifacts
+
+      # One directory per artifact: the signed and unsigned Windows packages
+      # hold the same file name, so the release always ships exactly one of
+      # them, preferring the signed one.
+      - name: Collect the release files
+        run: |
+          mkdir -p dist
+          cp artifacts/hardviz-linux-x64/* artifacts/hardviz-macos-arm64/* dist/
+          if compgen -G 'artifacts/hardviz-windows-x64-signed/*' > /dev/null; then
+            src=artifacts/hardviz-windows-x64-signed
+            echo 'Windows package: Authenticode-signed.'
+          else
+            src=artifacts/hardviz-windows-x64
+            echo 'Windows package: unsigned (SignPath not configured).'
+          fi
+          cp "$src"/* dist/
+          ls -l dist
+
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/*

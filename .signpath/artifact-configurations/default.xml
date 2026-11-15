@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration for the Windows release package.
+
+  The `sign` job in .github/workflows/ci.yml submits hardviz-windows-x64.zip,
+  the same archive that ends up on the release page. SignPath signs the two
+  executables inside it in place and returns the archive repacked with the
+  signed binaries.
+
+  Only HardViz's own executables are listed, so the redistributed
+  LibreHardwareMonitor binaries alongside them are never signed with this
+  project's certificate. That is deliberate: it is what the "Code signing
+  policy" section of the README promises.
+
+  Each <pe-file> also asserts the version resource that build.rs embeds, so a
+  request fails rather than signing a binary built from another commit.
+  `version` reaches the configuration through the action's `parameters` input.
+
+  Referenced from the workflow as: artifact-configuration-slug: 'default'.
+  Schema: https://docs.signpath.io/artifact-configuration/
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    
+      - 0.1.5. -->
+      <parameter name="version" description="Version without the leading v, as embedded in the Windows version resource" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="hardviz-windows-x64/hardviz.exe" product-name="HardViz" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="hardviz-windows-x64/hardviz-tui.exe" product-name="HardViz" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

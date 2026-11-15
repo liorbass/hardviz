@@ -65,6 +65,18 @@ data rather than your machine, and rasterised on the CPU, so no window opens:
 cargo test --lib readme_screenshots -- --ignored   # rewrites docs/images/*.png
 ```
 
+The two animated GIFs come from the same renderer, with the demo machine
+allowed to keep polling so the charts scroll and the gauges tween:
+
+```sh
+cargo test --release --lib readme_animation -- --ignored   # writes PNG frames to target/readme-anim
+```
+
+That only writes frames; `ffmpeg` packs them into `docs/images/*.gif`, in two
+passes so the gradients survive the 256-colour palette. Both commands, with the
+exact filters and the sizes they produce, are in the doc comment on
+`readme_animation` in `src/app/screenshots/mod.rs`.
+
 ## CI
 
 `.github/workflows/ci.yml` does not run on ordinary commits. It runs when a
@@ -77,7 +89,8 @@ check a commit and get test builds without publishing anything.
 | Format | `cargo fmt --all --check` (style in `rustfmt.toml`) |
 | Clippy + test | `cargo clippy --workspace -- -D warnings` and `cargo test --workspace`, on Windows, Ubuntu and macOS (each compiles platform-only sources the others cannot) |
 | Package | `cargo dist` on each platform (macOS: Apple Silicon); the Windows job first downloads LibreHardwareMonitor 0.9.6 (checksum-pinned). Packages are downloadable from the run's **Artifacts** |
-| GitHub release | on a `v*` tag only: publishes every package as a [release](https://github.com/liorbass/hardviz/releases), which the download buttons in the README always point at |
+| Sign (Windows) | on a `v*` tag, and only once SignPath is configured (see [Windows code signing](#windows-code-signing)): submits the Windows zip to be Authenticode-signed, uploads the result as `hardviz-windows-x64-signed` |
+| GitHub release | on a `v*` tag only: publishes every package as a [release](https://github.com/liorbass/hardviz/releases), which the download buttons in the README always point at. Ships the signed Windows package when there is one, otherwise the unsigned build |
 
 Run the same checks locally before pushing:
 
@@ -95,6 +108,38 @@ Before each commit it runs `cargo fmt --all --check` and `cargo clippy`, but
 only when Rust or Cargo files are staged; commits touching just docs, images
 or CI skip it instantly. Fix formatting with `cargo fmt --all`; skip the hook
 for one commit with `git commit --no-verify`.
+
+### Windows code signing
+
+The `sign` job is **off until the SignPath subscription exists**: it is gated on
+the `SIGNPATH_ORGANIZATION_ID` repository variable, so ordinary pushes and tags
+keep producing unsigned builds while the application is pending. To turn it on
+once approved:
+
+1. Create the artifact configuration in the SignPath project with slug `default`,
+   pasting in
+   [`.signpath/artifact-configurations/default.xml`](../.signpath/artifact-configurations/default.xml).
+   It lists exactly what gets signed: `hardviz.exe` and `hardviz-tui.exe` inside
+   the release zip, and *not* the bundled LibreHardwareMonitor binaries — the
+   [README](../README.md#code-signing-policy) promises the same. Each entry also
+   has to match the version resource `build.rs` embeds, so a request cannot sign
+   a binary built from another commit.
+2. Set the repository secret `SIGNPATH_API_TOKEN` (SignPath → organization →
+   API tokens, scoped to the project) and the repository variable
+   `SIGNPATH_ORGANIZATION_ID`.
+3. If the signing policy's slug is not `release-signing`, set
+   `SIGNPATH_SIGNING_POLICY_SLUG` to it.
+
+Then a tagged run submits the request and **waits for a person to approve it in
+SignPath** (up to an hour), so cut a release at a time when you can click. The
+release job prefers `hardviz-windows-x64-signed` over the unsigned package; if
+the signing job fails, no Windows package is published at all rather than a
+silent fallback to an unsigned one — check **Sign (Windows)** in that run.
+
+What has and has not been verified here: the workflow YAML parses, and the
+release job's collect step was rehearsed against a fake artifact tree with and
+without a signed package. The SignPath call itself cannot be exercised until the
+subscription is live.
 
 ## Packaging and releasing
 
@@ -126,12 +171,20 @@ for a package with LHM, extract the
 that arrangement is in the
 [README](../README.md#bundled-third-party-binary).
 
+Once the release is live, point the package-manager manifests at it with
+`packaging/refresh.sh v0.1.6`: it downloads the published assets, and rewrites
+the version and every hash in the winget, Scoop, AUR and Homebrew manifests.
+Hand-editing those six files instead is how a stale hash gets shipped. The
+per-channel submitting steps, and what is still unverified, are in
+[`packaging/README.md`](../packaging/README.md).
+
 ## Repository layout
 
 ```
 hardviz/
 ├── .cargo/config.toml    # cargo dist / cargo tag aliases
 ├── .githooks/pre-commit  # fmt + clippy before commits (enable: cargo xtask hooks)
+├── .signpath/            # SignPath artifact configurations (Windows code signing)
 ├── xtask/                # their implementation: packaging, version bump + tag, hooks
 ├── build.rs              # bundles vendor/LibreHardwareMonitor next to the exe (Windows)
 ├── vendor/               # LibreHardwareMonitor (config + license tracked; binaries added locally)
@@ -201,7 +254,7 @@ is in [architecture.md](architecture.md#module-map).
 
 ## Dependencies
 
-`eframe` / `egui` 0.29 (UI), `ratatui` 0.29 with crossterm (terminal UI),
+`eframe` / `egui` 0.37 (UI), `ratatui` 0.29 with crossterm (terminal UI),
 `sysinfo` 0.32 (CPU/RAM, hwmon), `nvml-wrapper` 0.10 (NVIDIA, incl.
 per-process GPU), `wmi` 0.13 (Windows ACPI fallback), `serde` + `serde_json`
 (config, LHM parsing), `directories` 5 (config path), `chrono` 0.4 (log
