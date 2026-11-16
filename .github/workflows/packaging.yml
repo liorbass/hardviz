@@ -1,0 +1,42 @@
+name: Packaging
+
+# The channels that cannot be checked from a Linux box. Homebrew's audit only
+# runs on macOS, so it runs here instead of never running at all. Weekly and by
+# hand rather than per push: a tap is touched when a release is cut, and
+# `--online` makes calls to GitHub's API that do not need to happen forty times
+# a day. Ordinary commits to main still trigger nothing.
+on:
+  schedule:
+    # Mondays, six minutes past six UTC — the hourly jobs cluster on the hour.
+    - cron: "6 6 * * 1"
+  workflow_dispatch:
+
+# A hand-started run should not cancel the weekly one halfway through, so the
+# group only keeps two of the same ref from overlapping.
+concurrency:
+  group: packaging-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  homebrew:
+    name: Brew audit (tap)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      # Auditing the tap's own clone, not the copy in this repository, is the
+      # point: users fetch those bytes. The tap is public, so no token is
+      # needed, and brew clones it under the Homebrew repository prefix.
+      - name: Tap
+        run: brew tap liorbass/tap https://github.com/liorbass/homebrew-tap
+
+      - name: Tap and repository must hold the same cask
+        run: |
+          tap="$(brew --repository)/Library/Taps/liorbass/homebrew-tap"
+          diff -u packaging/homebrew-tap/Casks/hardviz.rb "$tap/Casks/hardviz.rb"
+
+      # strict adds the style cops, online adds the download, the checksum, the
+      # livecheck and the minimum-macOS comparison against the app bundle.
+      - name: brew audit
+        run: brew audit --cask --strict --online liorbass/tap/hardviz
