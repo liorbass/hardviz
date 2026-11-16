@@ -133,12 +133,12 @@ rm -rf ~/Library/Application\ Support/com.hardviz.HardViz   # settings and log
 |---|---|---|
 | `brew install --cask liorbass/tap/hardviz` | macOS, Apple Silicon | live |
 | `winget install LiorBass.HardViz` | Windows x64 | [passed Microsoft's install validation, awaiting their review](https://github.com/microsoft/winget-pkgs/pull/481402) — use the ZIP until it merges |
-| `cargo install hardviz` | anything with a Rust toolchain | not published yet |
+| `cargo install hardviz` | anything with a Rust toolchain | live — source build, see below |
 
 Statuses as of 2026-11-16; [packaging/README.md](../packaging/README.md) says
 where each channel is maintained and how it is re-pinned per release.
 
-`cargo install` is the odd one out when it does arrive. It compiles the whole
+`cargo install` is the odd one out. It compiles the whole
 GUI stack instead of fetching a binary, and a crate is source: the bundled
 LibreHardwareMonitor is Windows binaries that never enter the repository, so
 they cannot be in the package either. A Windows build from crates.io therefore

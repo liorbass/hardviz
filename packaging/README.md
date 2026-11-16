@@ -13,10 +13,11 @@ release** — do not hand-edit the hashes.
 | Scoop | `scoop/hardviz.json` | push to your own `liorbass/scoop-bucket` repo (does not exist yet) |
 | AUR | `aur/PKGBUILD`, `aur/hardviz.desktop` | push to `hardviz-bin` on aur.archlinux.org (not submitted) |
 | Homebrew | `homebrew-tap/Casks/hardviz.rb` | copy into [liorbass/homebrew-tap](https://github.com/liorbass/homebrew-tap) and push — live for 0.1.5 |
-| crates.io | `Cargo.toml` (`exclude`) | `cargo publish`, which needs a registry token (0.1.5 unpublished) |
+| crates.io | `Cargo.toml` (`exclude`) | `cargo publish` right after the tag — live for 0.1.5 |
 
 CI installs none of these. They are the inputs to each submission, and as of
-2026-11-15 two of them have been made: the winget PR above, and the tap.
+2026-11-16 three of them have been made: the winget PR above, the tap, and the
+crates.io publish.
 
 ## The asset contract
 
@@ -158,10 +159,12 @@ holding only a license and a config and report that as success. `build.rs` asks
 `bundle::has_runtime` first and warns, on Windows only — because at runtime all
 the application can say is that a folder is missing.
 
-Publishing is manual, and stays that way: `cargo login` once on a machine that
-has the token (not this one), then `cargo publish` immediately after the tag, so
-the version in `Cargo.toml` and the release it points at cannot drift. A CI job
-would mean putting a registry token in the pipeline that writes releases.
+Publishing stays manual, and that is deliberate: `cargo publish` immediately after the tag, so
+the version in `Cargo.toml` and the release it points at cannot drift. A CI job would mean
+putting a registry token in the pipeline that writes releases. The half that needs no token is
+the pre-flight — `cargo publish --dry-run --locked` packages, builds the resulting tarball from
+scratch in a temporary directory, and stops before the upload. 0.1.5 went through that and is on
+the registry as of 2026-11-16.
 
 ## What was checked here, and what was not
 
@@ -279,9 +282,9 @@ from *pass* back to queued, because touching a branch there re-runs the whole
 thing. That is a price, not a signal that anything was wrong. `Scope` was worth
 buying; `Commands` shared the restart.
 
-Two submissions exist as of 2026-11-16: [winget pull request 481402](https://github.com/microsoft/winget-pkgs/pull/481402)
+Three channels are live as of 2026-11-16: the crate on
+[crates.io](https://crates.io/crates/hardviz), the
+[tap](https://github.com/liorbass/homebrew-tap), and [winget pull request 481402](https://github.com/microsoft/winget-pkgs/pull/481402)
 — CLA signed, every automated step having passed before the last push, now
-re-validating a warning-free manifest while it waits on a repository admin — and the
-[tap](https://github.com/liorbass/homebrew-tap). The Scoop bucket, the
-AUR package and the crates.io publish do not — the last only because a registry
-token is not on this machine; everything it needs is already on `main`.
+re-validating a warning-free manifest while it waits on a repository admin. The Scoop bucket and
+the AUR package are the two that do not exist yet.

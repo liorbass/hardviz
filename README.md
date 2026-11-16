@@ -2,6 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/liorbass/hardviz?sort=semver&label=release&display_name=tag)](https://github.com/liorbass/hardviz/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/liorbass/hardviz/ci.yml?label=CI)](https://github.com/liorbass/hardviz/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/hardviz?label=cargo)](https://crates.io/crates/hardviz)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-informational)
 ![Rust](https://img.shields.io/badge/rust-stable-orange?logo=rust)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
@@ -106,10 +107,12 @@ Or let a package manager fetch and update it:
 
 ```sh
 brew install --cask liorbass/tap/hardviz   # macOS, Apple Silicon
+cargo install hardviz                      # from source, on any platform Rust runs on
 ```
 
-winget and crates.io are in flight — [docs/install.md](docs/install.md#package-managers)
-says which of the three is installable today.
+winget is the last channel still in review —
+[docs/install.md](docs/install.md#package-managers) says what each one gives you,
+including the one thing a source build cannot: CPU temperature on Windows.
 
 First-launch prompts (SmartScreen, Gatekeeper), starting at login and
 removing it again — step by step for each OS — are in
