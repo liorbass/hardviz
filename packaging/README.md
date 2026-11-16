@@ -215,9 +215,10 @@ Two findings from that are worth keeping in mind for the next release:
 
 - **The client knows things the schema does not say.** `Scope` is a legal key, so
   both the Draft-07 validation and the positional key walk passed it; only the
-  client knows it means nothing for a nested *portable* package. `Scope: user` is
-  still in the open PR pending a decision to amend it — it changes no behaviour,
-  but it is the one warning a reviewer will ask about.
+  client knows it means nothing for a nested *portable* package. It is gone from
+  the manifests here; the open PR still carries it, because a push restarts their
+  whole pipeline and that is a decision, not a typo fix
+  ([see below](#one-push-for-both)).
 - **A manifest install cannot be verified from the shell that ran it.** winget
   updates `Path` in the registry, and a process keeps the environment it started
   with, so `Get-Command hardviz` fails in that window and works in a new one.
@@ -238,28 +239,44 @@ The install run above is therefore not the load-bearing evidence — 08 is, on t
 hardware and their client. The local run still earned its keep by catching `Scope`,
 which neither pipeline step complained about.
 
-### Unsolicited advice about `Commands`
+### One push for both
 
 A community account left a comment calling the top-level `Commands` block a
 "cleanup item the validator won't flag": both names are already
-`PortableCommandAlias` values, and the claim was that repeating them "can make
-tooling that reads `Commands` as a separate shim set report duplicate commands".
-Not acted on, and worth writing down because it reads like a review and is not
-one — the account is not on the
-[moderator list](https://github.com/microsoft/winget-pkgs/blob/master/doc/Moderation.md),
-the comment is not a review, and no check on the pull request asks for it:
+`PortableCommandAlias` values, and repeating them "can make tooling that reads
+`Commands` as a separate shim set report duplicate commands".
 
-- The schema's own description of the field is *"List of commands or aliases to run
-  the package"* — catalog metadata. Its `uniqueItems` applies inside that array, so
-  there is no cross-field uniqueness rule for it to violate, and in the client
-  source the field is a plain `std::vector<string_t>` on the installer record.
+The block is gone, but not because that reasoning holds — the difference matters
+the next time something arriving in a comment thread looks like a requirement:
+
+- The account is not on the
+  [moderator list](https://github.com/microsoft/winget-pkgs/blob/master/doc/Moderation.md),
+  the comment is not a review, and no check on the pull request asked for it. It is
+  advice, and advice gets weighed rather than obeyed.
+- The mechanism is not what the field is. The schema describes `Commands` as
+  *"List of commands or aliases to run the package"* — catalog metadata whose
+  `uniqueItems` applies inside its own array, so there is no cross-field uniqueness
+  rule it could violate. In the client source it is a plain `std::vector<string_t>`
+  on the installer record.
 - Measured here with this manifest: `ArchiveBinariesDependOnPath: true` created
-  nothing in `WinGet\Links`, so there was no second shim set to duplicate.
-- Steps 08 and 09 — the ones that install the package and compare metadata against
-  what the install produced — passed with `Commands` present.
-- Pushing to the branch restarts that 41-minute pipeline. Spend a restart on the
-  one real defect (`Scope`), not on a style preference from a reader with no
-  standing over the merge.
+  nothing in `WinGet\Links`, so there was never a second shim set to duplicate.
+- Steps 08 and 09 — install the package, then compare metadata against what the
+  install produced — both passed with `Commands` present.
+
+What settled it is that the key does nothing for us: the two names reach `PATH`
+with or without it, so there is no functional argument worth dying on, and `Scope`
+has to be pushed regardless because the client actually warns about it. One push,
+two changes, one 41-minute revalidation instead of two. The fixed files, with the
+`$schema` headers restored the way submission does them, now report:
+
+```
+Manifest validation succeeded.
+```
+
+Zero warnings, exit 0, client 1.29.380. Until that push happens 481402 still
+carries both keys, so the PR and `main` disagree on purpose — the PR is green and
+in a queue, and restarting a green pipeline is a decision about review timing, not
+about correctness.
 
 Two submissions exist as of 2026-11-16: [winget pull request 481402](https://github.com/microsoft/winget-pkgs/pull/481402)
 — CLA signed, every automated step green, an admin's review outstanding — and the

@@ -1,13 +1,18 @@
 # Type: Installer
 #
 # The release asset is a ZIP holding a folder of loose files, so this uses
-# winget's archive support (client 1.5+) with `portable` nested installers —
-# two of them, which only `portable` allows.
+# winget's archive support (`zip` has been in the schema since 1.4.0) with
+# `portable` nested installers — two of them, which only `portable` allows.
 #
 # `ArchiveBinariesDependOnPath: true` puts the install folder itself on PATH
 # instead of symlinking the exe into WinGet's `links` directory. HardViz finds
 # its bundled LibreHardwareMonitor folder next to the executable, so the files
-# must stay where they are and be launched from there.
+# must stay where they are and be launched from there. Verified on client
+# 1.29.380: nothing appears in `WinGet\Links`, the package folder goes on PATH.
+#
+# No `Scope` key: the client warns that scope is not supported for a portable
+# installer, and no `Commands` either — the two names are already
+# `PortableCommandAlias` above, and the install puts the folder on PATH anyway.
 PackageIdentifier: LiorBass.HardViz
 PackageVersion: 0.1.5
 InstallerType: zip
@@ -22,12 +27,7 @@ InstallModes:
   - interactive
   - silent
   - silentWithProgress
-Scope: user
 UpgradeBehavior: uninstallPrevious
-# `Commands` belongs to the installer manifest, not the locale one.
-Commands:
-  - hardviz
-  - hardviz-tui
 ReleaseDate: "2026-11-11"
 Installers:
   - Architecture: x64
