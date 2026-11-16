@@ -132,10 +132,10 @@ rm -rf ~/Library/Application\ Support/com.hardviz.HardViz   # settings and log
 | Command | Platform | Status |
 |---|---|---|
 | `brew install --cask liorbass/tap/hardviz` | macOS, Apple Silicon | live |
-| `winget install LiorBass.HardViz` | Windows x64 | submitted, [awaiting review](https://github.com/microsoft/winget-pkgs/pull/481402) — use the ZIP until it merges |
+| `winget install LiorBass.HardViz` | Windows x64 | [passed Microsoft's install validation, awaiting their review](https://github.com/microsoft/winget-pkgs/pull/481402) — use the ZIP until it merges |
 | `cargo install hardviz` | anything with a Rust toolchain | not published yet |
 
-Statuses as of 2026-11-15; [packaging/README.md](../packaging/README.md) says
+Statuses as of 2026-11-16; [packaging/README.md](../packaging/README.md) says
 where each channel is maintained and how it is re-pinned per release.
 
 `cargo install` is the odd one out when it does arrive. It compiles the whole

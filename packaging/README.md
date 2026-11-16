@@ -9,7 +9,7 @@ release** — do not hand-edit the hashes.
 
 | Channel | File | Who has to act |
 |---|---|---|
-| winget | `winget/l/LiorBass/HardViz/<version>/` | PR to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) — [opened for 0.1.5](https://github.com/microsoft/winget-pkgs/pull/481402) |
+| winget | `winget/l/LiorBass/HardViz/<version>/` | PR to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) — [481402](https://github.com/microsoft/winget-pkgs/pull/481402) passed their install validation, waiting on an admin's review |
 | Scoop | `scoop/hardviz.json` | push to your own `liorbass/scoop-bucket` repo (does not exist yet) |
 | AUR | `aur/PKGBUILD`, `aur/hardviz.desktop` | push to `hardviz-bin` on aur.archlinux.org (not submitted) |
 | Homebrew | `homebrew-tap/Casks/hardviz.rb` | copy into [liorbass/homebrew-tap](https://github.com/liorbass/homebrew-tap) and push — live for 0.1.5 |
@@ -224,18 +224,45 @@ Two findings from that are worth keeping in mind for the next release:
   Neither binary takes arguments, so the check is files and `PATH`, never
   `--version`.
 
-Their side of the evidence, from the same pull request: winget-pkgs runs its own
-validation pipeline, and 01 Pull Request Validation, 02 Manifest
-Validation, 03 URLs Validation, 04 URL Domain Validation and 06 Catalog Content
-Verification all report SUCCESS on 481402, with 05 Manifest Policy Validation
-NEUTRAL. The four steps that actually download the installer and install it
-(07-10) are still queued behind the Contributor License Agreement, which only
-the author can sign. The install run above is not a substitute for those — it
-proves the manifest and the archive on a client and an OS chosen by the
-maintainer, while 07-10 prove it on theirs — but it is why nothing in the PR has
-to be taken on faith.
+Their side of the evidence, and it ended up stronger. The CLA was signed on
+2026-11-16 and their pipeline ran to completion on 481402: 01 Pull Request
+Validation, 02 Manifest Validation, 03 URLs Validation, 04 URL Domain Validation,
+06 Catalog Content Verification, 07 Installers Scan, **08 Installation Validation**
+(41 minutes: their machine downloaded the ZIP and installed it), 09 Installer
+Metadata Validation and 10 Validation Completed all **pass**. 05 Manifest Policy
+Validation reports *skipping* into the label-driven path, with a bot note that the
+pull request needs a repository admin's manual review. `mergeable` is `MERGEABLE`
+and `mergeStateStatus` is `BLOCKED`: what is left is a person, not a checksum.
 
-Two submissions exist as of 2026-11-15: [winget pull request 481402](https://github.com/microsoft/winget-pkgs/pull/481402)
-and the [tap](https://github.com/liorbass/homebrew-tap). The Scoop bucket, the
+The install run above is therefore not the load-bearing evidence — 08 is, on their
+hardware and their client. The local run still earned its keep by catching `Scope`,
+which neither pipeline step complained about.
+
+### Unsolicited advice about `Commands`
+
+A community account left a comment calling the top-level `Commands` block a
+"cleanup item the validator won't flag": both names are already
+`PortableCommandAlias` values, and the claim was that repeating them "can make
+tooling that reads `Commands` as a separate shim set report duplicate commands".
+Not acted on, and worth writing down because it reads like a review and is not
+one — the account is not on the
+[moderator list](https://github.com/microsoft/winget-pkgs/blob/master/doc/Moderation.md),
+the comment is not a review, and no check on the pull request asks for it:
+
+- The schema's own description of the field is *"List of commands or aliases to run
+  the package"* — catalog metadata. Its `uniqueItems` applies inside that array, so
+  there is no cross-field uniqueness rule for it to violate, and in the client
+  source the field is a plain `std::vector<string_t>` on the installer record.
+- Measured here with this manifest: `ArchiveBinariesDependOnPath: true` created
+  nothing in `WinGet\Links`, so there was no second shim set to duplicate.
+- Steps 08 and 09 — the ones that install the package and compare metadata against
+  what the install produced — passed with `Commands` present.
+- Pushing to the branch restarts that 41-minute pipeline. Spend a restart on the
+  one real defect (`Scope`), not on a style preference from a reader with no
+  standing over the merge.
+
+Two submissions exist as of 2026-11-16: [winget pull request 481402](https://github.com/microsoft/winget-pkgs/pull/481402)
+— CLA signed, every automated step green, an admin's review outstanding — and the
+[tap](https://github.com/liorbass/homebrew-tap). The Scoop bucket, the
 AUR package and the crates.io publish do not — the last only because a registry
 token is not on this machine; everything it needs is already on `main`.
