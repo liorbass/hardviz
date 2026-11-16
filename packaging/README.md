@@ -144,6 +144,27 @@ Two macOS realities this tap cannot fix:
   has one hash and the folder name says `arm64`. Add an Intel asset and a
   `Hardware::CPU` branch before claiming Intel support.
 
+Two of the audits that `brew audit --online` runs are checkable without a Mac, because each one
+compares the cask against the artifact, and the artifact is public:
+
+- `audit_min_os` reads `LSMinimumSystemVersion` out of the app bundle and expects the cask's
+  `depends_on macos:` to say the same thing. The released bundle says `11.0` in `Info.plist` and
+  the Mach-O agrees (`LC_BUILD_VERSION` minos `11.0.0`); the cask says `>= :big_sur`, which is
+  that version — and `:big_sur` is still a live symbol upstream, whose removal Homebrew has
+  pencilled in for September 2027.
+- `audit_artifact_case` walks every stanza path through the archive with case included, and the
+  `sha256` has to be the digest GitHub actually serves. Both stanza paths are in the tarball
+  exactly as written, and the hash matches the live asset byte for byte.
+
+`audit_signing` is the one that a still-ad-hoc-signed build might be expected to trip, and it
+does not: the method returns early unless the cask comes from an official tap or signing was
+explicitly asked for. A personal tap gets no notarisation verdict either way, so the `caveats`
+line about right-clicking to open stays the only thing saying it.
+
+What stays unproven is everything that needs `brew` itself — the style cops, `livecheck`
+behaviour against a real tap, and the copy-and-symlink install. This machine has no `brew` at
+all: not on `PATH`, no `/home/linuxbrew`. The runners in this repository's own CI do have macOS.
+
 ## crates.io
 
 `cargo install hardviz` compiles the application from source. `publish = false`
