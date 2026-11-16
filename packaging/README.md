@@ -191,6 +191,15 @@ for a nested portable ZIP is taken from the documentation, not observed. The
 winget PR tells the reviewer exactly that instead of ticking boxes it cannot
 honour.
 
+That gap has partly closed on its own since the PR was opened: winget-pkgs runs
+its own validation pipeline, and 01 Pull Request Validation, 02 Manifest
+Validation, 03 URLs Validation, 04 URL Domain Validation and 06 Catalog Content
+Verification all report SUCCESS on 481402, with 05 Manifest Policy Validation
+NEUTRAL. The four steps that actually download the installer and install it
+(07-10) are still queued behind the Contributor License Agreement, which only
+the author can sign. So the schema checking above is no longer the only
+evidence — it is the part that was done before a Windows machine was involved.
+
 Two submissions exist as of 2026-11-15: [winget pull request 481402](https://github.com/microsoft/winget-pkgs/pull/481402)
 and the [tap](https://github.com/liorbass/homebrew-tap). The Scoop bucket, the
 AUR package and the crates.io publish do not — the last only because a registry
