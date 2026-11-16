@@ -102,6 +102,15 @@ somewhere permanent, and run it:
 | `hardviz-linux-x64.tar.gz` | `hardviz`, `hardviz-tui` |
 | `hardviz-macos-arm64.tar.gz` | `HardViz.app`, `hardviz-tui`; Apple Silicon, macOS 11+ |
 
+Or let a package manager fetch and update it:
+
+```sh
+brew install --cask liorbass/tap/hardviz   # macOS, Apple Silicon
+```
+
+winget and crates.io are in flight — [docs/install.md](docs/install.md#package-managers)
+says which of the three is installable today.
+
 First-launch prompts (SmartScreen, Gatekeeper), starting at login and
 removing it again — step by step for each OS — are in
 [docs/install.md](docs/install.md).

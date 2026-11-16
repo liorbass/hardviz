@@ -127,6 +127,28 @@ rm -rf ~/Library/Application\ Support/com.hardviz.HardViz   # settings and log
 
 ---
 
+## Package managers
+
+| Command | Platform | Status |
+|---|---|---|
+| `brew install --cask liorbass/tap/hardviz` | macOS, Apple Silicon | live |
+| `winget install LiorBass.HardViz` | Windows x64 | submitted, [awaiting review](https://github.com/microsoft/winget-pkgs/pull/481402) — use the ZIP until it merges |
+| `cargo install hardviz` | anything with a Rust toolchain | not published yet |
+
+Statuses as of 2026-11-15; [packaging/README.md](../packaging/README.md) says
+where each channel is maintained and how it is re-pinned per release.
+
+`cargo install` is the odd one out when it does arrive. It compiles the whole
+GUI stack instead of fetching a binary, and a crate is source: the bundled
+LibreHardwareMonitor is Windows binaries that never enter the repository, so
+they cannot be in the package either. A Windows build from crates.io therefore
+has no CPU temperature, power or fan readings — `build.rs` prints that while it
+compiles, and the app reports the missing folder rather than guessing. Use the
+ZIP or winget for those numbers; see
+[CPU temperature on Windows](data-sources.md#cpu-temperature-on-windows).
+
+---
+
 ## After installing
 
 - Something reads `N/A`? The hover text says why, and

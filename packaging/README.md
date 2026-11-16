@@ -9,13 +9,14 @@ release** — do not hand-edit the hashes.
 
 | Channel | File | Who has to act |
 |---|---|---|
-| winget | `winget/l/LiorBass/HardViz/<version>/` | PR to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) |
-| Scoop | `scoop/hardviz.json` | push to your own `liorbass/scoop-bucket` repo |
-| AUR | `aur/PKGBUILD`, `aur/hardviz.desktop` | push to `hardviz-bin` on aur.archlinux.org |
-| Homebrew | `homebrew-tap/Casks/hardviz.rb` | create the tap repo, then `brew tap` |
+| winget | `winget/l/LiorBass/HardViz/<version>/` | PR to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) — [opened for 0.1.5](https://github.com/microsoft/winget-pkgs/pull/481402) |
+| Scoop | `scoop/hardviz.json` | push to your own `liorbass/scoop-bucket` repo (does not exist yet) |
+| AUR | `aur/PKGBUILD`, `aur/hardviz.desktop` | push to `hardviz-bin` on aur.archlinux.org (not submitted) |
+| Homebrew | `homebrew-tap/Casks/hardviz.rb` | copy into [liorbass/homebrew-tap](https://github.com/liorbass/homebrew-tap) and push — live for 0.1.5 |
+| crates.io | `Cargo.toml` (`exclude`) | `cargo publish`, which needs a registry token (0.1.5 unpublished) |
 
-Nothing here is installed or published by CI. These are inputs to the four
-submissions.
+CI installs none of these. They are the inputs to each submission, and as of
+2026-11-15 two of them have been made: the winget PR above, and the tap.
 
 ## The asset contract
 
@@ -50,6 +51,13 @@ wingetcreate submit packaging/winget/l/LiorBass/HardViz/0.1.5/
 or by hand: fork, branch off `master`, add the three files under
 `manifests/l/LiorBass/HardViz/0.1.5/`, and title the PR
 `New package: LiorBass.HardViz version 0.1.5`.
+
+The files submitted are generated, not copied verbatim: every merged manifest
+upstream carries exactly one comment — `# yaml-language-server: $schema=…`, with
+the file's own kind and `ManifestVersion` in the URL — and none of the prose that
+lives here to explain the choices to whoever edits them next. So: drop the
+comment lines, prepend that header, and the data is otherwise byte-identical.
+The 0.1.5 submission did this by hand; if it happens again it deserves a script.
 
 Three things worth knowing before you do:
 
@@ -134,6 +142,26 @@ Two macOS realities this tap cannot fix:
   has one hash and the folder name says `arm64`. Add an Intel asset and a
   `Hardware::CPU` branch before claiming Intel support.
 
+## crates.io
+
+`cargo install hardviz` compiles the application from source. `publish = false`
+is gone, and `exclude` keeps the release engineering out of the tarball: measured
+with `cargo package --list`, 114 files and 6.8 MB became 96 files with no
+`vendor/`, no `packaging/`, no CI, signing or xtask config, and neither README
+animation — one GIF alone was 4.07 MB of it.
+
+What a registry build cannot have is LibreHardwareMonitor. `cargo package`
+follows `.gitignore`, and the LHM binaries are fetched into `vendor/` by the
+release workflow instead of committed, so `bundle::copy_tree` would copy a folder
+holding only a license and a config and report that as success. `build.rs` asks
+`bundle::has_runtime` first and warns, on Windows only — because at runtime all
+the application can say is that a folder is missing.
+
+Publishing is manual, and stays that way: `cargo login` once on a machine that
+has the token (not this one), then `cargo publish` immediately after the tag, so
+the version in `Cargo.toml` and the release it points at cannot drift. A CI job
+would mean putting a registry token in the pipeline that writes releases.
+
 ## What was checked here, and what was not
 
 Checked: all YAML parses, the Scoop JSON parses, `ruby -c` accepts the cask,
@@ -155,9 +183,15 @@ plain validator accepts invented keys silently — the key list has to be walked
 separately from the shape.
 
 Not checked, by definition: nothing has been validated by `winget validate`,
-`scoop checkup`, `makepkg`, `brew audit` or `brew install`, and no submission
-has been opened. Those tools run on Windows/Arch/macOS, none of which is this
-machine. A schema-legal manifest is also not the same as an installer that
-runs: how `InstallModes` and `ArchiveBinariesDependOnPath` behave for a nested
-portable ZIP is taken from the documentation, not observed. Treat each manifest
-as a well-formed draft until its own tooling accepts it.
+`scoop checkup`, `makepkg`, `brew audit` or `brew install`. Those tools run on
+Windows/Arch/macOS, none of which is this machine, so the tap's first real test
+is somebody else's Mac. A schema-legal manifest is also not the same as an
+installer that runs: how `InstallModes` and `ArchiveBinariesDependOnPath` behave
+for a nested portable ZIP is taken from the documentation, not observed. The
+winget PR tells the reviewer exactly that instead of ticking boxes it cannot
+honour.
+
+Two submissions exist as of 2026-11-15: [winget pull request 481402](https://github.com/microsoft/winget-pkgs/pull/481402)
+and the [tap](https://github.com/liorbass/homebrew-tap). The Scoop bucket, the
+AUR package and the crates.io publish do not — the last only because a registry
+token is not on this machine; everything it needs is already on `main`.
