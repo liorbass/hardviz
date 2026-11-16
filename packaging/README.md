@@ -77,12 +77,13 @@ Three things worth knowing before you do:
   Answering them is normal; the [SignPath signing](../README.md#code-signing-policy)
   makes the second half of that argument disappear, so submitting *after*
   signing is active is materially easier than before.
-- **Two boxes on their checklist cannot honestly be ticked from this machine.**
-  The template asks the author to have run `winget validate --manifest` and
-  `winget install --manifest`; there is no Windows here, so the PR says that
-  plainly and leaves it to their own validation bot. What *was* checked — the
-  schemas and the live digest — is in
-  [the last section](#what-was-checked-here-and-what-was-not).
+- **Both boxes on their checklist get ticked here.** The template asks the author
+  to have run `winget validate --manifest` and `winget install --manifest`. This
+  repository sits on the Windows filesystem with WSL interop enabled, so
+  `winget.exe` is a command away: client 1.29.380 validated the submitted bytes
+  and installed the real release ZIP. Quote the tool's verdict, not the schema's —
+  they disagreed once, and the tool was right
+  ([details](#what-was-checked-here-and-what-was-not)).
 
 ## Scoop
 
@@ -182,23 +183,57 @@ allows. Note that the schemas do not set `additionalProperties: false`, so a
 plain validator accepts invented keys silently — the key list has to be walked
 separately from the shape.
 
-Not checked, by definition: nothing has been validated by `winget validate`,
-`scoop checkup`, `makepkg`, `brew audit` or `brew install`. Those tools run on
-Windows/Arch/macOS, none of which is this machine, so the tap's first real test
-is somebody else's Mac. A schema-legal manifest is also not the same as an
-installer that runs: how `InstallModes` and `ArchiveBinariesDependOnPath` behave
-for a nested portable ZIP is taken from the documentation, not observed. The
-winget PR tells the reviewer exactly that instead of ticking boxes it cannot
-honour.
+Not checked, by definition: nothing has been validated by `scoop checkup`,
+`makepkg`, `brew audit` or `brew install`. Those run on Arch and macOS, neither of
+which is this machine, so the tap's first real test is somebody else's Mac.
 
-That gap has partly closed on its own since the PR was opened: winget-pkgs runs
-its own validation pipeline, and 01 Pull Request Validation, 02 Manifest
+The winget half of that list was wrong when it was written, and the correction is
+the most useful thing in this section. `winget.exe` is reachable from here —
+`/proc/sys/fs/binfmt_misc/WSLInterop` is enabled and the repo is on `C:\` — so the
+real client has run against the exact bytes in the pull request. Validate the
+submitted copy rather than the folder in this repo (stage it with
+`gh api repos/liorbass/winget-pkgs/contents/<path>?ref=hardviz-0.1.5 --jq .content
+| base64 -d`), because the copies here keep maintainer prose and drop the
+`$schema` header, and the client warns about that header. Client v1.29.380,
+`winget validate`:
+
+```
+Manifest validation succeeded with warnings.                                                   (exit 0)
+Manifest Warning: Scope is not supported for InstallerType portable.
+```
+
+`winget install --manifest` then downloaded the published ZIP and installed it:
+registered as `ARP\User\X64\LiorBass.HardViz__DefaultSource` at 0.1.5, unpacked to
+`%LOCALAPPDATA%\Microsoft\WinGet\Packages\LiorBass.HardViz__DefaultSource\hardviz-windows-x64\`
+with `LibreHardwareMonitor\` still beside `hardviz.exe`, and that folder appended to
+the user `Path`. Nothing appeared in `WinGet\Links` — which is
+`ArchiveBinariesDependOnPath: true` doing the documented thing instead of merely
+being documented. So the sentence this section used to carry, that nested portable
+ZIP behaviour is "taken from the documentation, not observed", no longer applies.
+
+Two findings from that are worth keeping in mind for the next release:
+
+- **The client knows things the schema does not say.** `Scope` is a legal key, so
+  both the Draft-07 validation and the positional key walk passed it; only the
+  client knows it means nothing for a nested *portable* package. `Scope: user` is
+  still in the open PR pending a decision to amend it — it changes no behaviour,
+  but it is the one warning a reviewer will ask about.
+- **A manifest install cannot be verified from the shell that ran it.** winget
+  updates `Path` in the registry, and a process keeps the environment it started
+  with, so `Get-Command hardviz` fails in that window and works in a new one.
+  Neither binary takes arguments, so the check is files and `PATH`, never
+  `--version`.
+
+Their side of the evidence, from the same pull request: winget-pkgs runs its own
+validation pipeline, and 01 Pull Request Validation, 02 Manifest
 Validation, 03 URLs Validation, 04 URL Domain Validation and 06 Catalog Content
 Verification all report SUCCESS on 481402, with 05 Manifest Policy Validation
 NEUTRAL. The four steps that actually download the installer and install it
 (07-10) are still queued behind the Contributor License Agreement, which only
-the author can sign. So the schema checking above is no longer the only
-evidence — it is the part that was done before a Windows machine was involved.
+the author can sign. The install run above is not a substitute for those — it
+proves the manifest and the archive on a client and an OS chosen by the
+maintainer, while 07-10 prove it on theirs — but it is why nothing in the PR has
+to be taken on faith.
 
 Two submissions exist as of 2026-11-15: [winget pull request 481402](https://github.com/microsoft/winget-pkgs/pull/481402)
 and the [tap](https://github.com/liorbass/homebrew-tap). The Scoop bucket, the
