@@ -9,7 +9,7 @@ release** — do not hand-edit the hashes.
 
 | Channel | File | Who has to act |
 |---|---|---|
-| winget | `winget/LiorBass.HardViz/<version>/` | PR to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) |
+| winget | `winget/l/LiorBass/HardViz/<version>/` | PR to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) |
 | Scoop | `scoop/hardviz.json` | push to your own `liorbass/scoop-bucket` repo |
 | AUR | `aur/PKGBUILD`, `aur/hardviz.desktop` | push to `hardviz-bin` on aur.archlinux.org |
 | Homebrew | `homebrew-tap/Casks/hardviz.rb` | create the tap repo, then `brew tap` |
@@ -36,24 +36,32 @@ from any local `cargo dist` build.
 
 ## winget
 
-Three files, the singleton-plus-split layout winget-pkgs asks for. Submit with
-the [`wingetcreate`](https://github.com/microsoft/wingetcreate) tool or by
-opening the PR by hand:
+Three files, kept in the folder layout winget-pkgs itself merges —
+`manifests/<initial>/<Publisher>/<Name>/<version>/`, which here is
+`winget/l/LiorBass/HardViz/0.1.5/`. Copying the folder straight across is the
+whole submission; nothing has to be renamed. `ManifestVersion` is 1.28.0, the
+schema their current pull-request template asks for. Either with
+[`wingetcreate`](https://github.com/microsoft/wingetcreate):
 
 ```sh
-wingetcreate submit packaging/winget/LiorBass.HardViz/0.1.5/
+wingetcreate submit packaging/winget/l/LiorBass/HardViz/0.1.5/
 ```
 
-Two things worth knowing before you do:
+or by hand: fork, branch off `master`, add the three files under
+`manifests/l/LiorBass/HardViz/0.1.5/`, and title the PR
+`New package: LiorBass.HardViz version 0.1.5`.
+
+Three things worth knowing before you do:
 
 - **The ZIP is installed as a nested *portable* package.** `InstallerType: zip`
-  needs winget ≥ 1.5 and must declare `NestedInstallerType` plus one
+  is in the schema from 1.4.0 on and must declare `NestedInstallerType` plus one
   `NestedInstallerFiles` entry per executable — `portable` is the only nested
   type that allows more than one, which is how both `hardviz.exe` and
   `hardviz-tui.exe` end up on `PATH`. `ArchiveBinariesDependOnPath: true` keeps
   the whole extracted folder in place (rather than symlinking the exe into
   WinGet's `links` directory) because HardViz looks for `LibreHardwareMonitor/`
-  next to its own executable.
+  next to its own executable. The key first appears in the 1.9.0 schema, so a
+  client older than that reads the manifest and ignores it.
 - **Expect review friction, not automatic acceptance.** winget-pkgs is a
   curated community repo: a human reviews each PR, and the checks reject
   anything that cannot install silently. An unauthenticated personal publisher
@@ -61,6 +69,12 @@ Two things worth knowing before you do:
   Answering them is normal; the [SignPath signing](../README.md#code-signing-policy)
   makes the second half of that argument disappear, so submitting *after*
   signing is active is materially easier than before.
+- **Two boxes on their checklist cannot honestly be ticked from this machine.**
+  The template asks the author to have run `winget validate --manifest` and
+  `winget install --manifest`; there is no Windows here, so the PR says that
+  plainly and leaves it to their own validation bot. What *was* checked — the
+  schemas and the live digest — is in
+  [the last section](#what-was-checked-here-and-what-was-not).
 
 ## Scoop
 
@@ -129,15 +143,16 @@ name exist inside those archives, and `refresh.sh` is idempotent (it restored
 deliberately corrupted version/hash fields byte-for-byte, and left the
 `#{version}` and `$version` templates alone).
 
-The three winget manifests additionally validate against the real 1.12.0 JSON
-schemas from [microsoft/winget-cli](https://github.com/microsoft/winget-cli),
-key by key: required properties present, no key outside the schema's list at
-either the top level or inside `Installers`. That check is what caught
-`Architectures:` where the schema wants `Installers`, `InstallerScope` where it
-wants `Scope`, and `Commands` in the defaultLocale file, which only the
-installer manifest allows. Note that the schemas do not set
-`additionalProperties: false`, so a plain validator accepts invented keys
-silently — the key list has to be walked separately from the shape.
+The three winget manifests additionally validate against the real 1.28.0 JSON
+schemas from [microsoft/winget-cli](https://github.com/microsoft/winget-cli)
+(they passed 1.12.0 too, and the folder was then moved to that version), key by
+key: required properties present, no key outside the schema's list at either the
+top level or inside `Installers`. That check is what caught `Architectures:`
+where the schema wants `Installers`, `InstallerScope` where it wants `Scope`,
+and `Commands` in the defaultLocale file, which only the installer manifest
+allows. Note that the schemas do not set `additionalProperties: false`, so a
+plain validator accepts invented keys silently — the key list has to be walked
+separately from the shape.
 
 Not checked, by definition: nothing has been validated by `winget validate`,
 `scoop checkup`, `makepkg`, `brew audit` or `brew install`, and no submission

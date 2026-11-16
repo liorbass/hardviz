@@ -76,9 +76,11 @@ set_aur_sums() { # rewrites the whole sha256sums=( ... ) block
   mv "$tmp" "$f"
 }
 
-wingetdir="winget/LiorBass.HardViz/${tag}"
-test -d "winget/LiorBass.HardViz" || { echo "no winget manifests" >&2; exit 1; }
-for f in winget/LiorBass.HardViz/*/*.yaml; do
+# Mirrors the layout winget-pkgs itself uses — manifests/<initial>/<Publisher>/
+# <Name>/<version>/ — so a submission is a copy, not a rename.
+wingetdir="winget/l/LiorBass/HardViz/${tag}"
+test -d "winget/l/LiorBass/HardViz" || { echo "no winget manifests" >&2; exit 1; }
+for f in winget/l/LiorBass/HardViz/*/*.yaml; do
   sed -i "s/^PackageVersion: .*/PackageVersion: ${tag}/" "$f"
 done
 
@@ -103,5 +105,5 @@ set_field homebrew-tap/Casks/hardviz.rb 'sha256 '  "\"${sha[hardviz-macos-arm64.
 echo
 echo "Pointed the manifests at ${ver} (released ${release_date})."
 echo "If the winget folder is still named for the old version, rename it:"
-echo "  mv winget/LiorBass.HardViz/<old> ${wingetdir}"
+echo "  mv winget/l/LiorBass/HardViz/<old> ${wingetdir}"
 echo "Then review 'git diff packaging/' and follow packaging/README.md to submit."
