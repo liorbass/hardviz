@@ -31,6 +31,31 @@ jobs:
       - name: Tap
         run: brew tap liorbass/tap https://github.com/liorbass/homebrew-tap
 
+      # What a user meets, measured before anything is trusted. Homebrew will
+      # not load a cask from a non-official tap that has not been trusted; the
+      # open question is whether naming the cask on the command line counts as
+      # consent for install, and what a later bare `brew upgrade` then does.
+      # Exit codes are printed rather than raised: the audit below is the gate,
+      # this step is the measurement, and a red job should still mean a broken
+      # channel rather than an unexpected answer.
+      - name: Observe the trust gate untrusted
+        run: |
+          set +e
+          probe() {
+            printf '\n=== %s ===\n' "$*"
+            "$@"
+            printf 'exit=%s\n' "$?"
+          }
+          probe brew install --cask liorbass/tap/hardviz
+          printf '\n=== the files an install is supposed to have left ===\n'
+          ls -ld /Applications/HardViz.app
+          ls -l "$(brew --prefix)/bin/hardviz-tui"
+          printf 'exit=%s\n' "$?"
+          probe brew list --cask
+          probe brew info --cask liorbass/tap/hardviz
+          probe brew outdated --cask
+          probe brew upgrade --cask --dry-run
+
       # Homebrew refuses to *load* a cask from a non-official tap until it is
       # trusted, and `brew audit` loads it. Naming the cask in an install or
       # upgrade command is consent for that one command; an audit has to say it
