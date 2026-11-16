@@ -12,12 +12,12 @@ release** — do not hand-edit the hashes.
 | winget | `winget/l/LiorBass/HardViz/<version>/` | PR to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) — [481402](https://github.com/microsoft/winget-pkgs/pull/481402) passed their install validation, waiting on an admin's review |
 | Scoop | `scoop/hardviz.json` | push to your own `liorbass/scoop-bucket` repo (does not exist yet) |
 | AUR | `aur/PKGBUILD`, `aur/hardviz.desktop` | push to `hardviz-bin` on aur.archlinux.org (not submitted) |
-| Homebrew | `homebrew-tap/Casks/hardviz.rb` | copy into [liorbass/homebrew-tap](https://github.com/liorbass/homebrew-tap) and push — live for 0.1.5 |
+| Homebrew | `homebrew-tap/Casks/hardviz.rb` | copy into [liorbass/homebrew-tap](https://github.com/liorbass/homebrew-tap) and push — live for 0.1.5, `brew audit` passes in CI |
 | crates.io | `Cargo.toml` (`exclude`) | `cargo publish` right after the tag — live for 0.1.5 |
 
-CI installs none of these. They are the inputs to each submission, and as of
-2026-11-16 three of them have been made: the winget PR above, the tap, and the
-crates.io publish.
+CI installs none of these, though since 2026-11-16 it audits one of them (see
+[Homebrew](#homebrew)). These files are the inputs to each submission, and as of 2026-11-16 three
+have been made: the winget PR above, the tap, and the crates.io publish.
 
 ## The asset contract
 
@@ -125,9 +125,32 @@ A personal tap, so no upstream review gate:
 ```sh
 gh repo create liorbass/homebrew-tap
 mkdir -p Casks && cp packaging/homebrew-tap/Casks/hardviz.rb Casks/
-brew tap liorbass/tap && brew install --cask liorbass/tap/hardviz
-brew audit --strict --online Casks/hardviz.rb   # run this on macOS
+brew tap liorbass/tap && brew trust liorbass/tap
+brew audit --cask --strict --online liorbass/tap/hardviz
+brew install --cask liorbass/tap/hardviz
 ```
+
+`brew trust` is not decoration. Homebrew will not *load* a cask from a tap that is not official,
+and audit loads it in order to read it:
+
+```
+Refusing to load cask liorbass/tap/hardviz from untrusted tap liorbass/tap.
+Run `brew trust --cask liorbass/tap/hardviz` or `brew trust liorbass/tap` to trust it.
+```
+
+That is the first thing the audit job ever hit here, and it is a real fact about the channel rather
+than a CI quirk. Read from the same source, `Trust.explicitly_allowed?` returns true when the
+running command is `install`, `reinstall` or `upgrade` and the fully-qualified name is one of the
+arguments — which is why the README's one-liner is not obviously broken by the gate, while an audit
+of that very same cask was refused. That half is reasoning about the code, not a measured install:
+`brew install --cask liorbass/tap/hardviz` has still never been run. Trust is remembered only by
+`brew trust` or a Brewfile `trusted:` entry, and `HOMEBREW_NO_REQUIRE_TAP_TRUST` is already
+deprecated upstream, so nothing here should lean on it.
+
+`.github/workflows/packaging.yml` runs this weekly and on demand on `macos-latest`: it taps the
+tap, trusts it, diffs `Casks/hardviz.rb` against the copy in this repository so the two cannot
+drift, and audits. The first run failed on the trust gate; after it, the audit passed — style cops,
+the live download of the real asset and the extraction of its artifacts, no offences.
 
 `livecheck` points at the latest release, so the cask notices new versions on
 its own; only the `sha256` needs a human (or `brew bump` / `brew livecheck
@@ -161,9 +184,16 @@ does not: the method returns early unless the cask comes from an official tap or
 explicitly asked for. A personal tap gets no notarisation verdict either way, so the `caveats`
 line about right-clicking to open stays the only thing saying it.
 
-What stays unproven is everything that needs `brew` itself — the style cops, `livecheck`
-behaviour against a real tap, and the copy-and-symlink install. This machine has no `brew` at
-all: not on `PATH`, no `/home/linuxbrew`. The runners in this repository's own CI do have macOS.
+What `brew audit` did on that runner covers exactly the two audits above, and it agreed with them:
+the download, the checksum, the extraction, the stanza paths and the minimum-macOS comparison all
+passed, as did the style cops, and no offence was reported. Reading the source first was still
+worth it — it is how the failure that did show up was recognisable as a trust gate rather than a
+cask defect in ten seconds instead of ten minutes.
+
+What stays unproven is the one thing that needs an install: the copy into `/Applications`, the
+symlink of `hardviz-tui`, and whether the `caveats` line is ever needed in practice. This machine
+has no `brew` at all — not on `PATH`, no `/home/linuxbrew` — so that remains a job waiting for a
+Mac rather than a claim being made without one.
 
 ## crates.io
 
@@ -215,10 +245,10 @@ allows. Note that the schemas do not set `additionalProperties: false`, so a
 plain validator accepts invented keys silently — the key list has to be walked
 separately from the shape.
 
-Not checked, by definition: nothing has been validated by `scoop checkup`,
-`makepkg`, `brew audit` or `brew install`. Those run on Arch and macOS, neither of
-which is this machine — but `macos-latest` is already in this repository's CI matrix, so the
-tap's real test is a job away rather than somebody else's Mac.
+Not checked, by definition: nothing has been validated by `scoop checkup`, `makepkg` or
+`brew install` — the first two run on Arch and Windows, the last needs a Mac and a real install.
+`brew audit` was on that list until 2026-11-16, when `.github/workflows/packaging.yml` ran it on
+`macos-latest` against the live tap and it passed; see [Homebrew](#homebrew).
 
 The winget half of that list was wrong when it was written, and the correction is
 the most useful thing in this section. `winget.exe` is reachable from here —
