@@ -215,9 +215,9 @@ Two findings from that are worth keeping in mind for the next release:
 
 - **The client knows things the schema does not say.** `Scope` is a legal key, so
   both the Draft-07 validation and the positional key walk passed it; only the
-  client knows it means nothing for a nested *portable* package. It is gone from
-  the manifests here; the open PR still carries it, because a push restarts their
-  whole pipeline and that is a decision, not a typo fix
+  client knows it means nothing for a nested *portable* package. Neither the
+  schemas nor their pipeline ever complained about it — the local `winget validate`
+  run did, and it is the reason the manifest changed
   ([see below](#one-push-for-both)).
 - **A manifest install cannot be verified from the shell that ran it.** winget
   updates `Path` in the registry, and a process keeps the environment it started
@@ -273,13 +273,15 @@ two changes, one 41-minute revalidation instead of two. The fixed files, with th
 Manifest validation succeeded.
 ```
 
-Zero warnings, exit 0, client 1.29.380. Until that push happens 481402 still
-carries both keys, so the PR and `main` disagree on purpose — the PR is green and
-in a queue, and restarting a green pipeline is a decision about review timing, not
-about correctness.
+Zero warnings, exit 0, client 1.29.380. That is the form 481402 carries now
+(`2cb3b6f`), and the push did cost what it was expected to cost: every check went
+from *pass* back to queued, because touching a branch there re-runs the whole
+thing. That is a price, not a signal that anything was wrong. `Scope` was worth
+buying; `Commands` shared the restart.
 
 Two submissions exist as of 2026-11-16: [winget pull request 481402](https://github.com/microsoft/winget-pkgs/pull/481402)
-— CLA signed, every automated step green, an admin's review outstanding — and the
+— CLA signed, every automated step having passed before the last push, now
+re-validating a warning-free manifest while it waits on a repository admin — and the
 [tap](https://github.com/liorbass/homebrew-tap). The Scoop bucket, the
 AUR package and the crates.io publish do not — the last only because a registry
 token is not on this machine; everything it needs is already on `main`.
