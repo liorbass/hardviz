@@ -13,7 +13,12 @@ cask "hardviz" do
     strategy :github_latest
   end
 
-  depends_on macos: ">= :big_sur"
+  # The bare symbol means ">= :big_sur" (MacOSRequirement.parse passes the
+  # comparator through); the string form now warns on every brew command that
+  # loads this file, in front of the user, asking them to report it to this tap.
+  # When Homebrew drops Big Sur support (their note says September 2027 or
+  # later), the symbol moves to DISABLED_MACOS_VERSIONS and this line has to go.
+  depends_on macos: :big_sur
 
   app "hardviz-macos-arm64/HardViz.app"
   binary "hardviz-macos-arm64/hardviz-tui"
