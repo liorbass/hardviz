@@ -1,16 +1,33 @@
 //! Bundling `LibreHardwareMonitor` next to the executable.
 //!
-//! Used by `build.rs` (through `#[path]`) and compiled into the library's
-//! tests, so the copy rules run under `cargo test` too. Only `std`: build
-//! scripts cannot use the crate's dependencies.
+//! Used by `build.rs` (through `#[path]`) and by the launcher, so the two agree
+//! on where the bundle is and what starts it. Only `std`: build scripts cannot
+//! use the crate's dependencies.
 
 use std::fs;
 use std::path::Path;
+
+/// The folder `build.rs` copies next to the executable, and the launcher looks
+/// for beside itself.
+pub const BUNDLE_DIR: &str = "LibreHardwareMonitor";
+/// The entry point of a bundle that can actually be started.
+pub const LHM_EXE: &str = "LibreHardwareMonitor.exe";
 
 /// The directory the executable lands in, from a build script's `OUT_DIR`
 /// (`<target>/<profile>/build/<crate>-<hash>/out`: three levels up).
 pub fn executable_dir(out_dir: &Path) -> Option<&Path> {
     out_dir.parent()?.parent()?.parent()
+}
+
+/// Whether `vendor` holds a launchable LibreHardwareMonitor rather than a
+/// folder of the same name.
+///
+/// A crate is source: `cargo package` follows `.gitignore`, which keeps the
+/// vendored binaries out, so the published crate carries only this folder's
+/// license and config. [`copy_tree`] would report that as a clean copy, which
+/// is why the build script asks here before it stays quiet.
+pub fn has_runtime(vendor: &Path) -> bool {
+    vendor.join(LHM_EXE).is_file()
 }
 
 /// Copy `src` into `dst`, recursively, skipping files whose copy is already
@@ -102,5 +119,19 @@ mod tests {
         set_mtime(&src.join("lhm.config"), now + Duration::from_secs(60));
         copy_tree(&src, &dst).expect("update");
         assert_eq!(fs::read_to_string(dst.join("lhm.config")).expect("updated"), "vendored");
+    }
+
+    #[test]
+    fn a_folder_without_the_launcher_is_not_a_runtime() {
+        let tmp = TempDir::new("runtime");
+        // What the published crate actually carries: the folder, its license,
+        // its config, and no binaries.
+        fs::write(tmp.0.join("LICENSE"), "MPL-2.0").expect("write");
+        fs::write(tmp.0.join("LibreHardwareMonitor.config"), "{}").expect("write");
+        assert!(!has_runtime(&tmp.0));
+        assert!(!has_runtime(&tmp.0.join("nope")));
+
+        fs::write(tmp.0.join(LHM_EXE), "MZ").expect("write");
+        assert!(has_runtime(&tmp.0));
     }
 }

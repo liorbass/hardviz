@@ -6,6 +6,7 @@
 //! which reports a declined prompt as a distinct, user-readable failure.
 
 use super::task;
+use crate::bundle::{BUNDLE_DIR, LHM_EXE};
 use std::fmt::{self, Write as _};
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -17,9 +18,6 @@ pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Exit code PowerShell scripts below use for a declined UAC prompt
 /// (`ERROR_CANCELLED`).
 const DECLINED: i32 = 1223;
-/// Folder (next to `hardviz.exe`) that `build.rs` copies LHM into.
-const BUNDLE_DIR: &str = "LibreHardwareMonitor";
-pub const LHM_EXE: &str = "LibreHardwareMonitor.exe";
 
 /// Why an elevated program did not run.
 #[derive(Debug)]

@@ -7,8 +7,24 @@ description = "Hardware monitoring dashboard: CPU, GPU, memory, temperatures, ne
 license = "MIT OR Apache-2.0"
 # Also where the update check looks for new releases (src/update.rs).
 repository = "https://github.com/liorbass/hardviz"
-# An application, not a library for crates.io.
-publish = false
+# It is an application, not a library — published so that `cargo install
+# hardviz` works. The release archives stay the install that carries a Windows
+# CPU-temperature source: see docs/install.md.
+categories = ["hardware-support", "command-line-utilities", "gui"]
+keywords = ["hardware-monitoring", "cpu", "gpu", "temperature", "monitor"]
+# Source and documentation only. The release-engineering tree is not part of an
+# install, and `vendor/` cannot be: those are Windows binaries, and a crate is
+# source. `build.rs` warns about what that leaves out, on Windows.
+exclude = [
+    "/.cargo/",
+    "/.github/",
+    "/.githooks/",
+    "/.signpath/",
+    "/packaging/",
+    "/vendor/",
+    "/docs/images/demo-dashboard.gif",
+    "/docs/images/demo-compact.gif",
+]
 
 # `xtask` holds the project tasks (`cargo dist`, `cargo tag`; see .cargo/config.toml).
 [workspace]

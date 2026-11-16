@@ -8,10 +8,10 @@
 //!
 //! `HardViz` reads CPU temperature from LHM's HTTP JSON endpoint (LHM 0.9.6 has
 //! no WMI provider), so shipping the binary alongside the app lets it be
-//! launched without a separate install. The copy is skipped when `vendor/` is
-//! absent, so the crate still builds for anyone who does not bundle it, and for
-//! non-Windows targets. The copy rules live in `src/bundle.rs`, which the
-//! library's tests also compile.
+//! launched without a separate install. When there is no launchable LHM to copy
+//! — a Windows build of the published crate, whose `vendor/` holds only a
+//! license and a config — the build says so, because the app can otherwise only
+//! report a missing folder. The copy rules live in `src/bundle.rs`.
 
 #[path = "src/bundle.rs"]
 mod bundle;
@@ -32,12 +32,21 @@ fn main() {
     embed_version_info();
 
     // LHM is a Windows .NET app; never bundle it into non-Windows builds.
-    if !vendor.is_dir() {
+    if !bundle::has_runtime(&vendor) {
+        // This build has no CPU temperature, no board power and no fan readings
+        // to offer, and at runtime all the app can say is that a folder is
+        // missing. Every `cargo install` build lands here — a crate is source,
+        // and `.gitignore` keeps the vendored binaries out of it — so the fact
+        // belongs in the build output, not only in the docs.
+        println!(
+            "cargo:warning=no launchable LibreHardwareMonitor in {}; this build cannot read CPU temperature, power or fans on Windows. Release archives and the winget package bundle it (docs/install.md).",
+            vendor.display()
+        );
         return;
     }
     let Some(out_dir) = std::env::var_os("OUT_DIR").map(PathBuf::from) else { return };
     let Some(exe_dir) = bundle::executable_dir(&out_dir) else { return };
-    if let Err(e) = bundle::copy_tree(&vendor, &exe_dir.join("LibreHardwareMonitor")) {
+    if let Err(e) = bundle::copy_tree(&vendor, &exe_dir.join(bundle::BUNDLE_DIR)) {
         // Non-fatal: the app still runs, CPU temp just stays unavailable.
         println!("cargo:warning=could not bundle LibreHardwareMonitor: {e}");
     }

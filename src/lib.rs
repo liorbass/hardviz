@@ -11,9 +11,10 @@
 //! `docs/architecture.md`.
 
 pub mod app;
-/// The build script's copy rules, compiled here so `cargo test` covers them.
-#[cfg(test)]
-mod bundle;
+/// The bundled-LibreHardwareMonitor layout and copy rules: `build.rs` includes
+/// the same file, and the launcher needs the folder and entry-point names, so
+/// this is compiled in every build (and covered by `cargo test`).
+pub mod bundle;
 pub mod config;
 pub mod cores;
 pub mod export;
