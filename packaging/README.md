@@ -175,6 +175,14 @@ name exist inside those archives, and `refresh.sh` is idempotent (it restored
 deliberately corrupted version/hash fields byte-for-byte, and left the
 `#{version}` and `$version` templates alone).
 
+The crates.io channel has been exercised end to end: `cargo install hardviz --locked` against
+the published 0.1.5 into a throwaway prefix fetched the crate from the registry, built it, and
+left `hardviz` and `hardviz-tui` in its `bin` (1m 29s on a warm dependency cache). For the tap,
+its `sha256` is the digest of the asset GitHub actually serves, both stanza paths —
+`hardviz-macos-arm64/HardViz.app` and `hardviz-macos-arm64/hardviz-tui` — exist inside that
+archive, and `livecheck` resolves to the newest release. That is everything about the cask that
+can be checked without a Mac.
+
 The three winget manifests additionally validate against the real 1.28.0 JSON
 schemas from [microsoft/winget-cli](https://github.com/microsoft/winget-cli)
 (they passed 1.12.0 too, and the folder was then moved to that version), key by
@@ -188,7 +196,8 @@ separately from the shape.
 
 Not checked, by definition: nothing has been validated by `scoop checkup`,
 `makepkg`, `brew audit` or `brew install`. Those run on Arch and macOS, neither of
-which is this machine, so the tap's first real test is somebody else's Mac.
+which is this machine — but `macos-latest` is already in this repository's CI matrix, so the
+tap's real test is a job away rather than somebody else's Mac.
 
 The winget half of that list was wrong when it was written, and the correction is
 the most useful thing in this section. `winget.exe` is reachable from here —
