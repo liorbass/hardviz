@@ -31,6 +31,13 @@ jobs:
       - name: Tap
         run: brew tap liorbass/tap https://github.com/liorbass/homebrew-tap
 
+      # Homebrew refuses to *load* a cask from a non-official tap until it is
+      # trusted, and `brew audit` loads it. Naming the cask in an install or
+      # upgrade command is consent for that one command; an audit has to say it
+      # out loud. A single slash makes brew read the argument as a tap.
+      - name: Trust the tap
+        run: brew trust liorbass/tap
+
       - name: Tap and repository must hold the same cask
         run: |
           tap="$(brew --repository)/Library/Taps/liorbass/homebrew-tap"
