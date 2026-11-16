@@ -288,12 +288,15 @@ Manifest validation succeeded.
 Zero warnings, exit 0, client 1.29.380. That is the form 481402 carries now
 (`2cb3b6f`), and the push did cost what it was expected to cost: every check went
 from *pass* back to queued, because touching a branch there re-runs the whole
-thing. That is a price, not a signal that anything was wrong. `Scope` was worth
-buying; `Commands` shared the restart.
+thing. That is a price, not a signal that anything was wrong — and it came out
+cheap: the re-run finished with 01 through 04, 06 through 10 all **pass** again on
+the warning-free manifest, 08 Installation Validation included, `mergeable` back to
+`true`. So the removals are proven harmless by their own pipeline, not just by the
+local `winget validate`. `Scope` was worth buying; `Commands` shared the restart.
 
 Three channels are live as of 2026-11-16: the crate on
 [crates.io](https://crates.io/crates/hardviz), the
 [tap](https://github.com/liorbass/homebrew-tap), and [winget pull request 481402](https://github.com/microsoft/winget-pkgs/pull/481402)
-— CLA signed, every automated step having passed before the last push, now
-re-validating a warning-free manifest while it waits on a repository admin. The Scoop bucket and
-the AUR package are the two that do not exist yet.
+— CLA signed, every automated step passed twice, once with the warning and once
+without, waiting now on a repository admin (`Policy-Test-2.7`, `Validation-Guide`).
+The Scoop bucket and the AUR package are the two that do not exist yet.
